@@ -1,0 +1,130 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  DRIVER
+  USER
+}
+
+enum RideStatus {
+  PENDING
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum RequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  role          Role     @default(USER)
+  firstName     String   @map("first_name")
+  lastName      String   @map("last_name")
+  phone         String?
+  zipCode       String?  @map("zip_code")
+  city          String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  driverProfile DriverProfile?
+  ridesAsRider  Ride[]         @relation("RiderRides")
+  ridesAsDriver Ride[]         @relation("DriverRides")
+  givenRatings  Rating[]       @relation("RatedBy")
+  receivedRatings Rating[]     @relation("RatedUser")
+
+  @@map("users")
+}
+
+model DriverProfile {
+  id               String  @id @default(uuid()) @db.Uuid
+  userId           String  @unique @db.Uuid @map("user_id")
+  licenseNumber    String  @map("license_number")
+  vehicleMake      String  @map("vehicle_make")
+  vehicleModel     String  @map("vehicle_model")
+  vehicleYear      Int     @map("vehicle_year")
+  vehicleColor     String  @map("vehicle_color")
+  licensePlate     String  @map("license_plate")
+  avgRating        Float   @default(0.0) @map("avg_rating")
+  totalRides       Int     @default(0) @map("total_rides")
+  isAvailable      Boolean @default(true) @map("is_available")
+  serviceZipCodes  String  @map("service_zip_codes") // comma-separated zip codes
+
+  user             User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("driver_profiles")
+}
+
+model Ride {
+  id            String     @id @default(uuid()) @db.Uuid
+  userId        String     @db.Uuid @map("user_id")
+  driverId      String?    @db.Uuid @map("driver_id")
+  fromAddress   String     @map("from_address")
+  fromZip       String     @map("from_zip")
+  fromLat       Float      @map("from_lat")
+  fromLng       Float      @map("from_lng")
+  toAddress     String     @map("to_address")
+  toZip         String     @map("to_zip")
+  toLat         Float      @map("to_lat")
+  toLng         Float      @map("to_lng")
+  price         Decimal    @db.Decimal(10, 2)
+  status        RideStatus @default(PENDING)
+  createdAt     DateTime   @default(now()) @map("created_at")
+  acceptedAt    DateTime?  @map("accepted_at")
+  completedAt   DateTime?  @map("completed_at")
+
+  // Relations
+  user          User           @relation("RiderRides", fields: [userId], references: [id])
+  driver        User?          @relation("DriverRides", fields: [driverId], references: [id])
+  rideRequests  RideRequest[]
+  ratings       Rating[]
+
+  @@map("rides")
+}
+
+model RideRequest {
+  id            String        @id @default(uuid()) @db.Uuid
+  rideId        String        @db.Uuid @map("ride_id")
+  driverId      String        @db.Uuid @map("driver_id")
+  status        RequestStatus @default(PENDING)
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  // Relations
+  ride          Ride          @relation(fields: [rideId], references: [id], onDelete: Cascade)
+
+  @@map("ride_requests")
+}
+
+model Rating {
+  id            String   @id @default(uuid()) @db.Uuid
+  rideId        String   @db.Uuid @map("ride_id")
+  ratedById     String   @db.Uuid @map("rated_by_id")
+  ratedUserId   String   @db.Uuid @map("rated_user_id")
+  score         Int      // 1-5
+  comment       String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  ride          Ride     @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  ratedBy       User     @relation("RatedBy", fields: [ratedById], references: [id])
+  ratedUser     User     @relation("RatedUser", fields: [ratedUserId], references: [id])
+
+  @@map("ratings")
+}
