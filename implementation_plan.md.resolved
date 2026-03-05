@@ -1,0 +1,400 @@
+# DollarToGo — Ride-Sharing POC Architecture & Project Plan
+
+A proof-of-concept ride-sharing platform targeting **100 initial users** with three roles: **Admin**, **Driver**, and **User**. Designed for minimal cost using open-source tools and free-tier cloud services.
+
+---
+
+## 1. High-Level Architecture
+
+```mermaid
+graph TB
+    subgraph "Frontend — Next.js App"
+        UI_User["User Portal"]
+        UI_Driver["Driver Portal"]
+        UI_Admin["Admin Dashboard"]
+    end
+
+    subgraph "Backend — Node.js / Express API"
+        Auth["Auth Service<br/>(JWT + bcrypt)"]
+        Rides["Rides Service"]
+        Users["Users Service"]
+        Matching["Driver Matching<br/>Service"]
+    end
+
+    subgraph "Data Layer"
+        PG["PostgreSQL"]
+        Redis["Redis (optional)<br/>Session Cache"]
+    end
+
+    UI_User --> Auth
+    UI_Driver --> Auth
+    UI_Admin --> Auth
+    Auth --> PG
+    Rides --> PG
+    Users --> PG
+    Matching --> PG
+    UI_User --> Rides
+    UI_User --> Matching
+    UI_Driver --> Rides
+    UI_Admin --> Users
+    UI_Admin --> Rides
+```
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Monorepo** | 4 devs, POC scope — simplest to manage |
+| **Next.js (frontend)** | SSR, file-based routing, React ecosystem |
+| **Express (backend)** | Lightweight, massive community, easy REST APIs |
+| **PostgreSQL** | Free, robust, supports geospatial via PostGIS |
+| **JWT auth** | Stateless, no session store needed at 100 users |
+| **Single deployable** | Keep infra cost near $0 during POC |
+
+---
+
+## 2. Tech Stack
+
+| Layer | Technology | Why |
+|-------|-----------|-----|
+| **Frontend** | Next.js 14 (React) | SSR, routing, great DX |
+| **Styling** | Tailwind CSS | Rapid UI development |
+| **Backend API** | Node.js + Express | Fast to build, JS everywhere |
+| **Database** | PostgreSQL 16 | Reliable, free, zip-code queries |
+| **ORM** | Prisma | Type-safe queries, easy migrations |
+| **Auth** | JWT + bcrypt | Simple, stateless |
+| **Maps** | Leaflet + OpenStreetMap | 100% free (no API key needed) |
+| **Geocoding** | Nominatim (OSM) | Free geocoding for zip codes |
+| **Realtime** | Socket.IO | Ride status updates |
+| **Testing** | Jest + React Testing Library | Standard, well-documented |
+| **CI/CD** | GitHub Actions | Free for public repos |
+
+---
+
+## 3. Project Structure (Monorepo)
+
+```
+DollarToGo/
+├── apps/
+│   ├── web/                    # Next.js frontend
+│   │   ├── app/
+│   │   │   ├── (user)/         # User-facing pages
+│   │   │   ├── (driver)/       # Driver-facing pages
+│   │   │   ├── (admin)/        # Admin dashboard pages
+│   │   │   ├── auth/           # Login / Register pages
+│   │   │   └── layout.tsx
+│   │   ├── components/
+│   │   │   ├── ui/             # Reusable UI primitives
+│   │   │   ├── user/           # User-specific components
+│   │   │   ├── driver/         # Driver-specific components
+│   │   │   └── admin/          # Admin-specific components
+│   │   └── lib/                # API client, utils, hooks
+│   │
+│   └── api/                    # Express backend
+│       ├── src/
+│       │   ├── routes/         # Route handlers
+│       │   ├── controllers/    # Business logic
+│       │   ├── middleware/     # Auth, validation, error handling
+│       │   ├── services/       # Driver matching, ride mgmt
+│       │   ├── models/         # Prisma client wrapper
+│       │   └── utils/          # Helpers (geocoding, etc.)
+│       └── prisma/
+│           └── schema.prisma   # Database schema
+│
+├── packages/
+│   └── shared/                 # Shared types, constants, validation
+│
+├── package.json                # Workspace root
+├── docker-compose.yml          # Local dev (Postgres + Redis)
+└── README.md
+```
+
+---
+
+## 4. Database Schema
+
+```mermaid
+erDiagram
+    USERS {
+        uuid id PK
+        string email UK
+        string password_hash
+        enum role "ADMIN | DRIVER | USER"
+        string first_name
+        string last_name
+        string phone
+        string zip_code
+        string city
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    DRIVER_PROFILES {
+        uuid id PK
+        uuid user_id FK
+        string license_number
+        string vehicle_make
+        string vehicle_model
+        int vehicle_year
+        string vehicle_color
+        string license_plate
+        float avg_rating
+        int total_rides
+        boolean is_available
+        string service_zip_codes "comma-separated"
+    }
+
+    RIDES {
+        uuid id PK
+        uuid user_id FK
+        uuid driver_id FK "nullable until accepted"
+        string from_address
+        string from_zip
+        float from_lat
+        float from_lng
+        string to_address
+        string to_zip
+        float to_lat
+        float to_lng
+        decimal price "set by user"
+        enum status "PENDING | ACCEPTED | IN_PROGRESS | COMPLETED | CANCELLED"
+        timestamp created_at
+        timestamp accepted_at
+        timestamp completed_at
+    }
+
+    RIDE_REQUESTS {
+        uuid id PK
+        uuid ride_id FK
+        uuid driver_id FK
+        enum status "PENDING | ACCEPTED | REJECTED"
+        timestamp created_at
+    }
+
+    RATINGS {
+        uuid id PK
+        uuid ride_id FK
+        uuid rated_by FK
+        uuid rated_user FK
+        int score "1-5"
+        string comment
+        timestamp created_at
+    }
+
+    USERS ||--o| DRIVER_PROFILES : "has (if driver)"
+    USERS ||--o{ RIDES : "requests"
+    DRIVER_PROFILES ||--o{ RIDES : "drives"
+    RIDES ||--o{ RIDE_REQUESTS : "has"
+    RIDES ||--o{ RATINGS : "has"
+    USERS ||--o{ RATINGS : "gives/receives"
+```
+
+---
+
+## 5. Core API Endpoints
+
+### Auth
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | Register (role: user/driver) |
+| POST | `/api/auth/login` | Login → JWT |
+| GET | `/api/auth/me` | Current user profile |
+
+### Rides (User)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/rides` | Create ride (from, to, price) |
+| GET | `/api/rides/my` | User's ride history |
+| GET | `/api/rides/:id/drivers` | Available drivers for a ride |
+| PUT | `/api/rides/:id/pick-driver` | User picks a driver |
+| PUT | `/api/rides/:id/cancel` | Cancel ride |
+
+### Rides (Driver)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/driver/requests` | Pending ride requests |
+| PUT | `/api/driver/requests/:id/accept` | Accept a ride |
+| PUT | `/api/driver/requests/:id/reject` | Reject a ride |
+| PUT | `/api/rides/:id/complete` | Mark ride complete |
+
+### Admin
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/admin/rides` | All rides (filterable) |
+| GET | `/api/admin/users` | All users |
+| GET | `/api/admin/drivers` | All drivers + stats |
+| GET | `/api/admin/stats` | Dashboard stats |
+
+### Users
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/users/:id` | User profile |
+| PUT | `/api/users/:id` | Update profile |
+| POST | `/api/ratings` | Submit a rating |
+
+---
+
+## 6. Ride Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant API as Backend API
+    participant DB as PostgreSQL
+    participant D as Driver
+
+    U->>API: POST /rides (from, to, price)
+    API->>DB: Create ride (status: PENDING)
+    API->>DB: Find drivers by matching zip_code
+    API-->>U: Ride created + list of matching drivers
+
+    U->>API: PUT /rides/:id/pick-driver (driver_id)
+    API->>DB: Create RIDE_REQUEST for selected driver
+    API-->>D: 🔔 Notification (Socket.IO)
+
+    D->>API: PUT /driver/requests/:id/accept
+    API->>DB: Update ride (status: ACCEPTED, assign driver)
+    API-->>U: 🔔 Driver accepted! (exchange contact info)
+
+    D->>API: PUT /rides/:id/complete
+    API->>DB: Update ride (status: COMPLETED)
+    API-->>U: 🔔 Ride completed
+    U->>API: POST /ratings (score, comment)
+```
+
+---
+
+## 7. Developer Assignment Plan (4 Developers)
+
+### Developer Roles
+
+| Dev | Focus Area | Responsibilities |
+|-----|-----------|-----------------|
+| **Dev 1** | Backend Core | Auth, database schema, Prisma, API scaffolding, middleware |
+| **Dev 2** | Backend Features | Ride CRUD, driver matching, ratings, Socket.IO |
+| **Dev 3** | Frontend — User & Driver | User portal, driver portal, map integration |
+| **Dev 4** | Frontend — Admin & Shared | Admin dashboard, shared components, deployment |
+
+---
+
+### Sprint Plan (8 Weeks)
+
+#### Sprint 1 — Foundation (Weeks 1–2)
+
+| Dev | Tasks |
+|-----|-------|
+| **Dev 1** | Set up monorepo, Prisma schema, DB migrations, auth endpoints (register/login/JWT), middleware |
+| **Dev 2** | Set up Express project structure, basic ride CRUD endpoints, input validation |
+| **Dev 3** | Set up Next.js, design system tokens, auth pages (login/register), layout & navigation |
+| **Dev 4** | Shared component library (buttons, forms, cards, modals), Docker Compose for local dev |
+
+> **Milestone**: Users can register, log in, and see a dashboard shell.
+
+#### Sprint 2 — Core Features (Weeks 3–4)
+
+| Dev | Tasks |
+|-----|-------|
+| **Dev 1** | User & driver profile APIs, driver profile CRUD, role-based access control |
+| **Dev 2** | Driver matching by zip code, ride request flow, ride status transitions |
+| **Dev 3** | Ride creation form with map (Leaflet), address autocomplete, ride history page |
+| **Dev 4** | Admin dashboard — user list, driver list with stats, ride overview table |
+
+> **Milestone**: Full ride creation → driver matching → acceptance flow works end-to-end.
+
+#### Sprint 3 — User Picks Driver & Realtime (Weeks 5–6)
+
+| Dev | Tasks |
+|-----|-------|
+| **Dev 1** | Ratings API, driving history aggregation, Socket.IO backend setup |
+| **Dev 2** | User picks driver feature (browse drivers, see ratings), ride notifications |
+| **Dev 3** | Driver portal — incoming requests, accept/reject UI, active ride view, contact exchange |
+| **Dev 4** | Admin stats dashboard (charts), ride status filters, driver approval workflow |
+
+> **Milestone**: User can browse drivers, pick one, driver gets notified and accepts. Admin sees everything.
+
+#### Sprint 4 — Polish & Deploy (Weeks 7–8)
+
+| Dev | Tasks |
+|-----|-------|
+| **Dev 1** | API hardening, error handling, rate limiting, seed scripts for demo data |
+| **Dev 2** | End-to-end testing, API integration tests, bug fixes |
+| **Dev 3** | Responsive design polish, loading states, error boundaries, UX improvements |
+| **Dev 4** | CI/CD pipeline (GitHub Actions), deployment to Render/Railway, documentation |
+
+> **Milestone**: Deployed, working POC ready for 100 users.
+
+---
+
+## 8. Infrastructure & Hosting (Low-Cost Strategy)
+
+> [!TIP]
+> For a **100-user POC**, you can run everything on free tiers. Upgrade only when you outgrow them.
+
+| Service | Provider | Cost | Notes |
+|---------|----------|------|-------|
+| **Frontend hosting** | [Vercel](https://vercel.com) | **Free** | Perfect for Next.js, 100 GB bandwidth |
+| **Backend API** | [Render](https://render.com) | **Free** | Free web service (spins down when idle) |
+| **PostgreSQL** | [Neon](https://neon.tech) | **Free** | 0.5 GB storage, serverless Postgres |
+| **Domain** | Optional | ~$12/yr | Use `.com` or free subdomain from Render/Vercel |
+| **CI/CD** | GitHub Actions | **Free** | Unlimited for public repos |
+| **Monitoring** | [Better Stack](https://betterstack.com) | **Free** | Basic uptime monitoring |
+| **Email (optional)** | [Resend](https://resend.com) | **Free** | 100 emails/day on free tier |
+
+### Estimated Monthly Cost
+
+| Scenario | Cost |
+|----------|------|
+| **POC (100 users)** | **$0 – $12** (domain only) |
+| **Growing (500 users)** | ~$20/mo (paid Render + larger DB) |
+| **Scale (1000+ users)** | ~$50–100/mo (dedicated instances) |
+
+---
+
+## 9. Development Environment Setup
+
+```bash
+# Prerequisites
+node >= 20, npm >= 10, Docker Desktop
+
+# Clone & install
+git clone https://github.com/<org>/DollarToGo.git
+cd DollarToGo
+npm install          # installs all workspace deps
+
+# Start local database
+docker compose up -d  # Postgres on :5432
+
+# Run migrations
+cd apps/api && npx prisma migrate dev
+
+# Start dev servers
+npm run dev          # starts both frontend (:3000) and backend (:4000)
+```
+
+---
+
+## 10. Future Enhancements (Post-POC)
+
+- **Payment integration** (Stripe) — hold/release model
+- **Real-time GPS tracking** — driver location on map
+- **Push notifications** — mobile PWA support
+- **Advanced matching algorithm** — rating, distance, price factors
+- **Driver document verification** — license, insurance upload
+- **Ride scheduling** — book rides in advance
+- **Chat** — in-app messaging between user and driver
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- **Backend**: `cd apps/api && npm test` — Jest unit tests for auth, rides, matching services
+- **Frontend**: `cd apps/web && npm test` — React Testing Library for key user flows
+- **E2E**: Playwright tests for critical paths (register → create ride → accept → complete)
+
+### Manual Verification
+- Register as User, Driver, and Admin — verify role-based access
+- Create a ride, verify driver matching by zip code
+- Pick a driver, verify notification and acceptance flow
+- Check Admin dashboard shows all rides and user data
+- Test on mobile viewport for responsive design
