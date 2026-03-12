@@ -5,20 +5,13 @@ This file is a central place to keep all technical notes, ideas, command referen
 ## Architecture Guidelines
 - **Frontend**: Next.js 14 (React) in `apps/web`
 - **Backend API**: Node.js + Express in `apps/api`
-- **Database**: PostgreSQL 16 (local via Docker Compose)
+- **Database**: PostgreSQL 16 (Neon)
 - **ORM**: Prisma (`apps/api/prisma/schema.prisma`)
 
 ## Useful Commands
 
-### 1. Database & Docker
-Start background database:
-```bash
-docker compose up -d
-```
-Stop database:
-```bash
-docker compose down
-```
+### 1. Database
+Using remote Neon Postgres Database.
 
 ### 2. Prisma Commands (Run these inside apps/api)
 Apply schema changes:
@@ -48,3 +41,12 @@ npm run dev
 ## Scratchpad / Ideas
 *Put unorganized thoughts or API payloads to test here*
 
+## Database connection urls:
+Database url: postgresql://neondb_owner:npg_Mv8Tbd2sqHjK@ep-curly-violet-adcmqo8c-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+
+Direct Connection: postgresql://neondb_owner:npg_Mv8Tbd2sqHjK@ep-curly-violet-adcmqo8c.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+
+## commands to run for migrating the schema changes to neon db
+```bash
+npx prisma migrate dev
+```

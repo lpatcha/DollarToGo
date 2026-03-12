@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum Role {
@@ -114,7 +115,7 @@ model RideRequest {
 
 model Rating {
   id            String   @id @default(uuid()) @db.Uuid
-  rideId        String   @db.Uuid @map("ride_id")
+  rideId        String?  @db.Uuid @map("ride_id")
   ratedById     String   @db.Uuid @map("rated_by_id")
   ratedUserId   String   @db.Uuid @map("rated_user_id")
   score         Int      // 1-5
@@ -122,7 +123,7 @@ model Rating {
   createdAt     DateTime @default(now()) @map("created_at")
 
   // Relations
-  ride          Ride     @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  ride          Ride?    @relation(fields: [rideId], references: [id], onDelete: Cascade)
   ratedBy       User     @relation("RatedBy", fields: [ratedById], references: [id])
   ratedUser     User     @relation("RatedUser", fields: [ratedUserId], references: [id])
 

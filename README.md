@@ -11,9 +11,10 @@ DollarToGo connects riders with drivers in their city — but with a twist: **th
 ### Key Features
 
 - 🧑‍💼 **Three portals** — User, Driver, and Admin interfaces
-- 💰 **User-set pricing** — riders post rides and fix the fare
-- 📍 **Zip-code matching** — drivers are matched based on service area
-- ⭐ **Driver ratings & history** — users pick drivers based on preferences
+- 💰 **User-set prices** — riders post rides and fix the fare
+- 📍 **Zip-code broadcasting** — new rides ping all local drivers in the pickup zip code
+- 🗳️ **User empowerment** — if multiple drivers accept, the rider picks their favorite
+- ⭐ **Proxy ratings** — users can natively rate drivers, and admins can submit ratings manually
 - 🔔 **Real-time notifications** — instant ride updates via Socket.IO
 - 🗺️ **Free maps** — powered by Leaflet + OpenStreetMap (no API keys)
 - 🛡️ **Role-based access** — Admin dashboard with full visibility
@@ -101,7 +102,7 @@ DollarToGo/
 ├── packages/
 │   └── shared/                 # Shared types, constants, validation
 │
-├── docker-compose.yml          # Local dev (Postgres)
+
 ├── package.json                # Workspace root
 └── README.md
 ```
@@ -178,8 +179,9 @@ DollarToGo/
 |--------|----------|-------------|
 | POST | `/api/rides` | Create ride (from, to, price) |
 | GET | `/api/rides/my` | User's ride history |
-| GET | `/api/rides/:id/drivers` | Available drivers for a ride |
-| PUT | `/api/rides/:id/pick-driver` | User picks a driver |
+| GET | `/api/rides/:id/drivers` | Available drivers who accepted a ride request |
+| PUT | `/api/rides/:id/pick-driver` | User picks a driver from the accepted pool |
+| PUT | `/api/rides/:id/increase-price` | Bump price to entice drivers if ride goes unanswered |
 | PUT | `/api/rides/:id/cancel` | Cancel a ride |
 
 ### Rides (Driver)
@@ -196,32 +198,35 @@ DollarToGo/
 | GET | `/api/admin/rides` | All rides (filterable) |
 | GET | `/api/admin/users` | All users |
 | GET | `/api/admin/drivers` | All drivers + stats |
+| POST | `/api/admin/users/:userId/rate` | Add a manual rating to a user/driver profile |
 | GET | `/api/admin/stats` | Dashboard statistics |
 
 ---
 
 ## Ride Flow
 
-```
-  User                          API                         Driver
+```text
+  User                          API                         Drivers (in Zip Code)
    │                             │                            │
    ├── POST /rides ────────────► │                            │
-   │   (from, to, price)        ├── Save ride (PENDING)      │
+   │   (from, to, price)         ├── Save ride (PENDING)      │
    │                             │                            │
-   │ ◄── Matching drivers ──────┤                            │
+   │                             ├── Broadcast (Socket.IO) ──►│
+   │                             │                            │
+   │                             │ ◄── Accept request ────────┤ Driver A
+   │ ◄── Driver A accepted! ────┤                            │
+   │                             │                            │
+   │                             │ ◄── Accept request ────────┤ Driver B
+   │ ◄── Driver B accepted! ────┤                            │
    │                             │                            │
    ├── PUT /pick-driver ───────► │                            │
-   │                             ├── Notify driver ─────────► │
+   │   (picks Driver A)          ├── Reject Driver B          │
+   │                             ├── Assign to Driver A ────► │
    │                             │                            │
-   │                             │ ◄── Accept request ────────┤
-   │ ◄── Driver accepted! ──────┤                            │
-   │     (contact info shared)   │                            │
-   │                             │                            │
-   │                             │ ◄── Complete ride ─────────┤
+   │                             │ ◄── Complete ride ─────────┤ Driver A
    │ ◄── Ride completed ────────┤                            │
    │                             │                            │
    ├── POST /ratings ──────────► │                            │
-   │                             │                            │
 ```
 
 ---
@@ -246,7 +251,7 @@ DollarToGo/
 | **Dev 1** | Monorepo setup, Prisma schema, DB migrations, auth endpoints, middleware |
 | **Dev 2** | Express project structure, basic ride CRUD, input validation |
 | **Dev 3** | Next.js setup, design tokens, auth pages (login/register), navigation |
-| **Dev 4** | Shared component library, Docker Compose for local dev |
+| **Dev 4** | Shared component library, Database connection |
 
 > ✅ **Milestone**: Users can register, log in, and see a dashboard shell.
 
@@ -305,7 +310,7 @@ DollarToGo/
 
 - Node.js ≥ 20
 - npm ≥ 10
-- Docker Desktop
+
 
 ### Setup
 
@@ -316,9 +321,6 @@ cd DollarToGo
 
 # Install dependencies
 npm install
-
-# Start local database
-docker compose up -d
 
 # Run database migrations
 cd apps/api && npx prisma migrate dev
