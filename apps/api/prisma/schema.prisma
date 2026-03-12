@@ -41,6 +41,8 @@ model User {
   phone         String?
   zipCode       String?  @map("zip_code")
   city          String?
+  resetCode     String?  @map("reset_code")
+  resetCodeExpiresAt DateTime? @map("reset_code_expires_at")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 

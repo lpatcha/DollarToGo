@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { PrismaClient, Role } from '@prisma/client';
 import { hashPassword, comparePassword } from '../../utils/password';
 import { generateToken } from '../../utils/jwt';
+import { sendEmail } from '../../utils/email';
+import crypto from 'crypto';
 
 const prisma = new PrismaClient();
 
@@ -106,6 +108,91 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         });
     } catch (error) {
         console.error('Login error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+export const forgotPassword = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            res.status(400).json({ message: 'Email is required' });
+            return;
+        }
+
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user) {
+            // Act as if it succeeded to prevent email enumeration attacks
+            res.status(200).json({ message: 'If an account with that email exists, a password reset link has been sent.' });
+            return;
+        }
+
+        // Generate a secure unique token
+        const resetToken = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: {
+                resetCode: resetToken,
+                resetCodeExpiresAt: expiresAt,
+            },
+        });
+
+        // In a real application, you'd use your actual frontend URL, e.g., from an environment variable:
+        // const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const resetLink = `http://localhost:3000/auth/reset-password?code=${resetToken}`;
+
+        const subject = 'Password Reset Request';
+        const text = `Hi ${user.firstName},\n\nYou requested a password reset. Please click the link below to reset your password:\n\n${resetLink}\n\nThis link will expire in 10 minutes.\n\nIf you did not request this, please ignore this email.`;
+
+        await sendEmail(user.email, subject, text);
+
+        res.status(200).json({ message: 'If an account with that email exists, a password reset link has been sent.' });
+    } catch (error) {
+        console.error('Forgot password error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+export const resetPassword = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { code, newPassword } = req.body;
+
+        if (!code || !newPassword) {
+            res.status(400).json({ message: 'Missing required fields (code, newPassword)' });
+            return;
+        }
+
+        const user = await prisma.user.findFirst({
+            where: {
+                resetCode: code,
+                resetCodeExpiresAt: {
+                    gt: new Date(), // Code must not be expired
+                },
+            },
+        });
+
+        if (!user) {
+            res.status(400).json({ message: 'Invalid or expired reset token' });
+            return;
+        }
+
+        const passwordHash = await hashPassword(newPassword);
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: {
+                passwordHash,
+                resetCode: null,
+                resetCodeExpiresAt: null,
+            },
+        });
+
+        res.status(200).json({ message: 'Password has been successfully reset' });
+    } catch (error) {
+        console.error('Reset password error:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
 };

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { enrollZipCode, updateDriverProfileAction } from '../../controllers/driver/profileController';
-import { authenticate, requireRole } from '../../middleware/authMiddleware';
+import { authenticate, requireRole } from '../../middleware/auth/authMiddleware';
 
 const router = Router();
 

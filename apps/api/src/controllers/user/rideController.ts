@@ -63,6 +63,73 @@ export const getMyRides = async (req: Request, res: Response): Promise<void> => 
     }
 };
 
+// 2b. Get user's completed ride history with filtering and pagination
+export const getRideHistory = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const userId = req.user?.userId;
+        const { fromDate, toDate, page = '1', limit = '10' } = req.query;
+
+        if (!userId) {
+            res.status(401).json({ message: 'Unauthorized' });
+            return;
+        }
+
+        const pageNumber = parseInt(page as string, 10);
+        const limitNumber = parseInt(limit as string, 10);
+        const skip = (pageNumber - 1) * limitNumber;
+
+        // Build the where clause for filtering
+        const whereClause: any = {
+            userId,
+            status: RideStatus.COMPLETED,
+        };
+
+        if (fromDate || toDate) {
+            whereClause.completedAt = {};
+            if (fromDate) {
+                whereClause.completedAt.gte = new Date(fromDate as string);
+            }
+            if (toDate) {
+                // Ensure the toDate covers the whole day by adding 23:59:59 if needed, 
+                // or assume front-end passes ISO strings.
+                whereClause.completedAt.lte = new Date(toDate as string);
+            }
+        }
+
+        const [rides, totalCount] = await Promise.all([
+            prisma.ride.findMany({
+                where: whereClause,
+                orderBy: { completedAt: 'desc' }, // Most recent first
+                skip,
+                take: limitNumber,
+                include: {
+                    driver: {
+                        select: { firstName: true, phone: true },
+                    },
+                },
+            }),
+            prisma.ride.count({
+                where: whereClause,
+            }),
+        ]);
+
+        const totalPages = Math.ceil(totalCount / limitNumber);
+
+        res.status(200).json({
+            rides,
+            pagination: {
+                totalCount,
+                totalPages,
+                currentPage: pageNumber,
+                limit: limitNumber,
+            },
+        });
+    } catch (error) {
+        console.error('Get ride history error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
 // 3. User views all drivers who accepted their pending ride
 export const getAvailableDrivers = async (req: Request, res: Response): Promise<void> => {
     try {

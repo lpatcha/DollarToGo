@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { createRide, getMyRides, getAvailableDrivers, pickDriver, increasePrice, cancelRide } from '../../controllers/user/rideController';
-import { authenticate } from '../../middleware/authMiddleware';
+import { createRide, getMyRides, getRideHistory, getAvailableDrivers, pickDriver, increasePrice, cancelRide } from '../../controllers/user/rideController';
+import { authenticate } from '../../middleware/auth/authMiddleware';
 
 const router = Router();
 
@@ -10,6 +10,7 @@ router.use(authenticate);
 // Standard Rider endpoints
 router.post('/', createRide);
 router.get('/my', getMyRides);
+router.get('/history', getRideHistory);
 
 // Interactive Rider-to-Driver endpoints
 router.get('/:id/drivers', getAvailableDrivers);
