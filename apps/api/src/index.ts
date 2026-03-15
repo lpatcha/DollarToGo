@@ -3,10 +3,11 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import authRoutes from './routes/auth/authRoutes';
-import rideRoutes from './routes/driver/driverRoutes';
+import rideRoutes from './routes/user/rideRoutes';
 import driverRoutes from './routes/driver/driverRoutes';
 import userProfileRoutes from './routes/user/profileRoutes';
-import driverProfileRoutes from './routes/user/profileRoutes';
+import driverProfileRoutes from './routes/driver/profileRoutes';
+import ratingRoutes from './routes/rating/ratingRoutes';
 
 dotenv.config();
 
@@ -30,6 +31,7 @@ apiRouter.use('/rides', rideRoutes);
 apiRouter.use('/driver/profile', driverProfileRoutes);
 apiRouter.use('/driver', driverRoutes);
 apiRouter.use('/admin', (req, res) => res.json({ message: 'Admin routes placeholder' }));
+apiRouter.use('/ratings', ratingRoutes);
 apiRouter.use('/users/profile', userProfileRoutes);
 
 app.use('/api', apiRouter);

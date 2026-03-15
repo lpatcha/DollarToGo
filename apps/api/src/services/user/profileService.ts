@@ -11,15 +11,42 @@ export const getUserProfile = async (userId: string) => {
 };
 
 export const updateUserProfile = async (userId: string, data: any) => {
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { driverProfile: true }
+    });
+
+    if (!user) {
+        throw new Error('User not found');
+    }
+
+    const updateData: any = {
+        ...(data.firstName && { firstName: data.firstName }),
+        ...(data.lastName && { lastName: data.lastName }),
+        ...(data.phone && { phone: data.phone }),
+        ...(data.city && { city: data.city }),
+        ...(data.zipCode && { zipCode: data.zipCode }),
+    };
+
+    // If user is a driver and driverProfile data is provided, update it as well
+    if (user.role === 'DRIVER' && data.driverProfile) {
+        updateData.driverProfile = {
+            update: {
+                ...(data.driverProfile.licenseNumber && { licenseNumber: data.driverProfile.licenseNumber }),
+                ...(data.driverProfile.vehicleMake && { vehicleMake: data.driverProfile.vehicleMake }),
+                ...(data.driverProfile.vehicleModel && { vehicleModel: data.driverProfile.vehicleModel }),
+                ...(data.driverProfile.vehicleYear !== undefined && { vehicleYear: data.driverProfile.vehicleYear }),
+                ...(data.driverProfile.vehicleColor && { vehicleColor: data.driverProfile.vehicleColor }),
+                ...(data.driverProfile.licensePlate && { licensePlate: data.driverProfile.licensePlate }),
+                ...(data.driverProfile.isAvailable !== undefined && { isAvailable: data.driverProfile.isAvailable }),
+                ...(data.driverProfile.serviceZipCodes && { serviceZipCodes: data.driverProfile.serviceZipCodes }),
+            }
+        };
+    }
+
     return prisma.user.update({
         where: { id: userId },
-        data: {
-            ...(data.firstName && { firstName: data.firstName }),
-            ...(data.lastName && { lastName: data.lastName }),
-            ...(data.phone && { phone: data.phone }),
-            ...(data.city && { city: data.city }),
-            ...(data.zipCode && { zipCode: data.zipCode }),
-        },
+        data: updateData,
         include: { driverProfile: true },
     });
 };

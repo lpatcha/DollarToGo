@@ -6,6 +6,7 @@ const JWT_EXPIRES_IN = '7d';
 export interface JwtPayload {
     userId: string;
     role: string;
+    exp?: number;
 }
 
 export const generateToken = (payload: JwtPayload): string => {

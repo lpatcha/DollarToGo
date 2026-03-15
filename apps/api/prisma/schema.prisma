@@ -43,6 +43,8 @@ model User {
   city          String?
   resetCode     String?  @map("reset_code")
   resetCodeExpiresAt DateTime? @map("reset_code_expires_at")
+  avgRating     Float    @default(0.0) @map("avg_rating")
+  totalRatingsCount Int  @default(0) @map("total_ratings_count")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -65,7 +67,6 @@ model DriverProfile {
   vehicleYear      Int     @map("vehicle_year")
   vehicleColor     String  @map("vehicle_color")
   licensePlate     String  @map("license_plate")
-  avgRating        Float   @default(0.0) @map("avg_rating")
   totalRides       Int     @default(0) @map("total_rides")
   isAvailable      Boolean @default(true) @map("is_available")
   serviceZipCodes  String  @map("service_zip_codes") // comma-separated zip codes
@@ -129,5 +130,14 @@ model Rating {
   ratedBy       User     @relation("RatedBy", fields: [ratedById], references: [id])
   ratedUser     User     @relation("RatedUser", fields: [ratedUserId], references: [id])
 
+  @@unique([rideId, ratedById])
   @@map("ratings")
+}
+
+model BlacklistedToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+
+  @@map("blacklisted_tokens")
 }

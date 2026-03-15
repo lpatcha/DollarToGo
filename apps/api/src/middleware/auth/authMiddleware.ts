@@ -1,5 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken, JwtPayload } from '../../utils/jwt';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 // Extend Express Request to include user context
 declare global {
@@ -10,7 +13,7 @@ declare global {
     }
 }
 
-export const authenticate = (req: Request, res: Response, next: NextFunction): void => {
+export const authenticate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
         const authHeader = req.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -19,6 +22,17 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
         }
 
         const token = authHeader.split(' ')[1];
+
+        // Check if token is blacklisted
+        const isBlacklisted = await prisma.blacklistedToken.findUnique({
+            where: { token }
+        });
+
+        if (isBlacklisted) {
+            res.status(401).json({ message: 'Token has been revoked' });
+            return;
+        }
+
         const decoded = verifyToken(token);
 
         req.user = decoded;

@@ -41,13 +41,18 @@ export const createRide = async (req: Request, res: Response): Promise<void> => 
     }
 };
 
-// 2. Get user's active and historical rides
+// 2. Get user's active rides (Pending and Accepted)
 export const getMyRides = async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = req.user?.userId;
 
         const rides = await prisma.ride.findMany({
-            where: { userId },
+            where: {
+                userId,
+                status: {
+                    in: [RideStatus.PENDING, RideStatus.ACCEPTED]
+                }
+            },
             orderBy: { createdAt: 'desc' },
             include: {
                 driver: {
@@ -66,13 +71,11 @@ export const getMyRides = async (req: Request, res: Response): Promise<void> => 
 // 2b. Get user's completed ride history with filtering and pagination
 export const getRideHistory = async (req: Request, res: Response): Promise<void> => {
     try {
-        const userId = req.user?.userId;
-        const { fromDate, toDate, page = '1', limit = '10' } = req.query;
+        const { fromDate, toDate, page = '1', limit = '10', userId, driverId } = req.query;
 
-        if (!userId) {
-            res.status(401).json({ message: 'Unauthorized' });
-            return;
-        }
+        // Fallback to logged-in user if neither userId nor driverId is provided
+        const authUserId = req.user?.userId;
+        const role = req.user?.role;
 
         const pageNumber = parseInt(page as string, 10);
         const limitNumber = parseInt(limit as string, 10);
@@ -80,9 +83,21 @@ export const getRideHistory = async (req: Request, res: Response): Promise<void>
 
         // Build the where clause for filtering
         const whereClause: any = {
-            userId,
             status: RideStatus.COMPLETED,
         };
+
+        if (authUserId && role === 'DRIVER') {
+            // Default to self if no specific ID filter is provided
+            whereClause.driverId = authUserId;
+        }
+        else if (authUserId && role === 'USER') {
+            whereClause.userId = authUserId;
+        }
+
+        if (userId && driverId) {
+            whereClause.userId = userId as string;
+            whereClause.driverId = driverId as string;
+        }
 
         if (fromDate || toDate) {
             whereClause.completedAt = {};
@@ -90,8 +105,6 @@ export const getRideHistory = async (req: Request, res: Response): Promise<void>
                 whereClause.completedAt.gte = new Date(fromDate as string);
             }
             if (toDate) {
-                // Ensure the toDate covers the whole day by adding 23:59:59 if needed, 
-                // or assume front-end passes ISO strings.
                 whereClause.completedAt.lte = new Date(toDate as string);
             }
         }
@@ -99,13 +112,16 @@ export const getRideHistory = async (req: Request, res: Response): Promise<void>
         const [rides, totalCount] = await Promise.all([
             prisma.ride.findMany({
                 where: whereClause,
-                orderBy: { completedAt: 'desc' }, // Most recent first
+                orderBy: { completedAt: 'desc' },
                 skip,
                 take: limitNumber,
                 include: {
                     driver: {
                         select: { firstName: true, phone: true },
                     },
+                    user: {
+                        select: { firstName: true, lastName: true }
+                    }
                 },
             }),
             prisma.ride.count({
@@ -158,8 +174,9 @@ export const getAvailableDrivers = async (req: Request, res: Response): Promise<
             select: {
                 id: true,
                 firstName: true,
+                avgRating: true,
                 driverProfile: {
-                    select: { avgRating: true, vehicleMake: true, vehicleModel: true, totalRides: true }
+                    select: { vehicleMake: true, vehicleModel: true, totalRides: true }
                 }
             }
         });
@@ -184,13 +201,25 @@ export const pickDriver = async (req: Request, res: Response): Promise<void> => 
             return;
         }
 
-        // Wrap in transaction: Assign ride, reject other drivers
+        // Wrap in transaction: Assign ride, confirm chosen driver, reject all others
         await prisma.$transaction(async (tx) => {
+            // 1. Reject all other drivers for this ride (both Pending and Accepted)
             await tx.rideRequest.updateMany({
-                where: { rideId, status: RequestStatus.ACCEPTED },
+                where: {
+                    rideId,
+                    driverId: { not: driverId },
+                    status: { in: [RequestStatus.PENDING, RequestStatus.ACCEPTED] }
+                },
                 data: { status: RequestStatus.REJECTED },
             });
 
+            // 2. Ensure chosen driver's specific request is marked as ACCEPTED
+            await tx.rideRequest.updateMany({
+                where: { rideId, driverId },
+                data: { status: RequestStatus.ACCEPTED },
+            });
+
+            // 3. Update the main ride record
             await tx.ride.update({
                 where: { id: rideId },
                 data: {
@@ -216,7 +245,7 @@ export const increasePrice = async (req: Request, res: Response): Promise<void> 
         const { newPrice } = req.body;
 
         const ride = await prisma.ride.findUnique({ where: { id: rideId } });
-        if (!ride || ride.userId !== userId || ride.status !== RideStatus.PENDING) {
+        if (!ride || ride.userId !== userId || ride.status == RideStatus.COMPLETED || ride.status == RideStatus.CANCELLED) {
             res.status(400).json({ message: 'Invalid ride status or unauthorized' });
             return;
         }
@@ -252,6 +281,16 @@ export const cancelRide = async (req: Request, res: Response): Promise<void> => 
             return;
         }
 
+        if (ride.status === RideStatus.COMPLETED) {
+            res.status(400).json({ message: 'Cannot cancel a completed ride' });
+            return;
+        }
+
+        if (ride.status === RideStatus.CANCELLED) {
+            res.status(400).json({ message: 'Ride is already cancelled' });
+            return;
+        }
+
         await prisma.$transaction(async (tx) => {
             await tx.ride.update({
                 where: { id: rideId },
@@ -259,7 +298,10 @@ export const cancelRide = async (req: Request, res: Response): Promise<void> => 
             });
 
             await tx.rideRequest.updateMany({
-                where: { rideId, status: RequestStatus.PENDING },
+                where: {
+                    rideId,
+                    status: { in: [RequestStatus.PENDING, RequestStatus.ACCEPTED] }
+                },
                 data: { status: RequestStatus.REJECTED },
             });
         });
@@ -267,6 +309,48 @@ export const cancelRide = async (req: Request, res: Response): Promise<void> => 
         res.status(200).json({ message: 'Ride cancelled successfully' });
     } catch (error) {
         console.error('Cancel ride error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+// 7. Get single ride details (Authorized for Rider, Driver, or Admin)
+export const getRideDetails = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const authUserId = req.user?.userId;
+        const role = req.user?.role;
+        const rideId = typeof req.params.id === 'string' ? req.params.id : req.params.id[0];
+
+        const ride = await prisma.ride.findUnique({
+            where: { id: rideId },
+            include: {
+                user: {
+                    select: { firstName: true, lastName: true, phone: true, email: true }
+                },
+                driver: {
+                    select: { firstName: true, lastName: true, phone: true }
+                },
+                ratings: true
+            }
+        });
+
+        if (!ride) {
+            res.status(404).json({ message: 'Ride not found' });
+            return;
+        }
+
+        // Authorization check: Admin can see all, others only if they are part of the ride
+        const isAdmin = role === 'ADMIN' || role === 'admin'; // handling potential case difference
+        const isRider = ride.userId === authUserId;
+        const isDriver = ride.driverId === authUserId;
+
+        if (!isAdmin && !isRider && !isDriver) {
+            res.status(403).json({ message: 'Forbidden: You do not have access to this ride details' });
+            return;
+        }
+
+        res.status(200).json({ ride });
+    } catch (error) {
+        console.error('Get ride details error:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
 };

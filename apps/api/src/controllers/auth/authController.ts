@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient, Role } from '@prisma/client';
 import { hashPassword, comparePassword } from '../../utils/password';
-import { generateToken } from '../../utils/jwt';
+import { generateToken, verifyToken } from '../../utils/jwt';
 import { sendEmail } from '../../utils/email';
 import crypto from 'crypto';
 
@@ -39,7 +39,11 @@ export const register = async (req: Request, res: Response): Promise<void> => {
                 },
             });
 
-            if (userRole === Role.DRIVER && driverDetails) {
+            // If registering as a DRIVER, create the profile immediately
+            if (userRole === Role.DRIVER) {
+                if (!driverDetails) {
+                    throw new Error('Driver details are required when registering as a driver');
+                }
                 await tx.driverProfile.create({
                     data: {
                         userId: newUser.id,
@@ -71,6 +75,31 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     } catch (error) {
         console.error('Registration error:', error);
         res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+export const logout = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const token = authHeader.split(' ')[1];
+            const decoded = verifyToken(token);
+            
+            if (decoded.exp) {
+                await prisma.blacklistedToken.create({
+                    data: {
+                        token,
+                        expiresAt: new Date(decoded.exp * 1000)
+                    }
+                });
+            }
+        }
+        
+        res.status(200).json({ message: 'Logged out successfully' });
+    } catch (error) {
+        console.error('Logout error:', error);
+        // Even if there's an error (e.g., token already blacklisted), we treat logout as success
+        res.status(200).json({ message: 'Logged out successfully' });
     }
 };
 

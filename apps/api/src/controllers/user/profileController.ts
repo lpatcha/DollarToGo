@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { getUserProfile, updateUserProfile } from '../../services/user/profileService';
 import { hashPassword, comparePassword } from '../../utils/password';
 import { sendEmail } from '../../utils/email';
+import { generateToken } from '../../utils/jwt';
 
 const prisma = new PrismaClient();
 
@@ -133,7 +134,7 @@ export const updatePassword = async (req: Request, res: Response): Promise<void>
 
         res.status(200).json({ message: 'Password updated successfully' });
     } catch (error) {
-        console.error('Update password error:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
 };
+
