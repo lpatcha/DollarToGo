@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { PrismaClient, RequestStatus, RideStatus } from '@prisma/client';
+import { emitToUser } from '../../utils/socket';
 
 const prisma = new PrismaClient();
 
@@ -44,7 +45,34 @@ export const getAssignedRideRequests = async (req: Request, res: Response): Prom
             }
         });
 
-        res.status(200).json({ requests });
+        // Separate ACCEPTED and PENDING requests
+        const acceptedRequests = requests.filter(r => r.status === RequestStatus.ACCEPTED);
+        const pendingRequests = requests.filter(r => r.status === RequestStatus.PENDING);
+
+        // Sort pending requests by Equation: (Price ^ 1.5) / estimatedMiles
+        pendingRequests.sort((a, b) => {
+            const priceA = Number(a.ride.price) || 0;
+            const milesA = a.estimatedMiles || 1; // Default to 1 to avoid div by zero
+            const scoreA = Math.pow(priceA, 1.5) / milesA;
+
+            const priceB = Number(b.ride.price) || 0;
+            const milesB = b.estimatedMiles || 1;
+            const scoreB = Math.pow(priceB, 1.5) / milesB;
+
+            return scoreB - scoreA; // Highest score first
+        });
+
+        // If the driver has accepted a ride, prioritize showing that. 
+        // Otherwise, show ONLY the top 1 most valuable pending request.
+        let displayRequests: any[] = [];
+
+        if (acceptedRequests.length > 0) {
+            displayRequests = acceptedRequests;
+        } else if (pendingRequests.length > 0) {
+            displayRequests = [pendingRequests[0]];
+        }
+
+        res.status(200).json({ requests: displayRequests });
     } catch (error) {
         console.error('Get assigned ride requests error:', error);
         res.status(500).json({ message: 'Internal server error' });
@@ -82,6 +110,28 @@ export const acceptRideRequest = async (req: Request, res: Response): Promise<vo
             data: { status: RequestStatus.ACCEPTED }
         });
 
+        // Notify the Rider that a driver is interested
+        const driver = await prisma.user.findUnique({
+            where: { id: driverId as string },
+            select: { firstName: true, lastName: true, avgRating: true, totalRatingsCount: true, totalRides: true, driverProfile: true }
+        });
+
+        emitToUser(rideRequest.ride.userId, 'DRIVER_INTERESTED', {
+            rideId: rideRequest.rideId,
+            driver: {
+                id: driverId,
+                name: `${driver?.firstName} ${driver?.lastName}`,
+                firstName: driver?.firstName,
+                lastName: driver?.lastName,
+                avgRating: driver?.avgRating,
+                totalRatingsCount: driver?.totalRatingsCount,
+                totalRides: driver?.totalRides,
+                rating: driver?.avgRating,
+                vehicle: driver?.driverProfile ? `${driver.driverProfile.vehicleMake} ${driver.driverProfile.vehicleModel}` : 'Unknown Vehicle',
+                driverProfile: driver?.driverProfile
+            }
+        });
+
         res.status(200).json({ message: 'Ride request accepted. Waiting for rider confirmation.', request: updatedRequest });
     } catch (error) {
         console.error('Accept ride request error:', error);
@@ -89,68 +139,7 @@ export const acceptRideRequest = async (req: Request, res: Response): Promise<vo
     }
 };
 
-// 2. Driver views their ride history and total earnings for a filtered period
-export const getDriverHistory = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const driverId = req.user?.userId;
 
-        // Pagination logic
-        const page = parseInt(req.query.page as string) || 1;
-        const limit = parseInt(req.query.limit as string) || 10;
-        const skip = (page - 1) * limit;
-
-        const now = new Date();
-        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-        const startDate = req.query.startDate ? new Date(req.query.startDate as string) : oneWeekAgo;
-        const endDate = req.query.endDate ? new Date(req.query.endDate as string) : now;
-
-        const whereClause = {
-            driverId,
-            status: RideStatus.COMPLETED,
-            createdAt: {
-                gte: startDate,
-                lte: endDate,
-            }
-        };
-
-        const [rides, totalCount, aggregations] = await Promise.all([
-            prisma.ride.findMany({
-                where: whereClause,
-                skip,
-                take: limit,
-                orderBy: { createdAt: 'desc' }
-            }),
-            prisma.ride.count({ where: whereClause }),
-            prisma.ride.aggregate({
-                where: whereClause,
-                _sum: {
-                    price: true
-                }
-            })
-        ]);
-
-        const totalEarnings = aggregations._sum.price || 0;
-        const totalPages = Math.ceil(totalCount / limit);
-
-        res.status(200).json({
-            period: {
-                start: startDate,
-                end: endDate
-            },
-            earnings: Number(totalEarnings),
-            pagination: {
-                totalRides: totalCount,
-                totalPages,
-                currentPage: page,
-                limit
-            },
-            rides
-        });
-    } catch (error) {
-        res.status(500).json({ message: 'Internal server error' });
-    }
-};
 
 // 4. Driver cancels a ride that was accepted by the user
 export const driverCancelRide = async (req: Request, res: Response): Promise<void> => {
@@ -186,12 +175,18 @@ export const driverCancelRide = async (req: Request, res: Response): Promise<voi
 
             // Mark all related requests as REJECTED
             await tx.rideRequest.updateMany({
-                where: { 
+                where: {
                     rideId,
                     status: { in: [RequestStatus.PENDING, RequestStatus.ACCEPTED] }
                 },
                 data: { status: RequestStatus.REJECTED }
             });
+        });
+
+        // Notify the Rider that the driver cancelled
+        emitToUser(ride.userId, 'RIDE_CANCELLED', {
+            rideId,
+            message: 'Your driver has cancelled this ride. Please try booking again.'
         });
 
         res.status(200).json({ message: 'Ride cancelled successfully by driver' });
@@ -236,7 +231,7 @@ export const completeRide = async (req: Request, res: Response): Promise<void> =
             // 1. Mark ride as completed
             const updatedRide = await tx.ride.update({
                 where: { id: rideId },
-                data: { 
+                data: {
                     status: RideStatus.COMPLETED,
                     completedAt: new Date()
                 }
@@ -257,29 +252,146 @@ export const completeRide = async (req: Request, res: Response): Promise<void> =
             const allRatings = await tx.rating.findMany({
                 where: { ratedUserId: ride.userId }
             });
-            
+
             const avgRating = allRatings.reduce((sum, r) => sum + r.score, 0) / allRatings.length;
 
             await tx.user.update({
                 where: { id: ride.userId },
-                data: { 
+                data: {
                     avgRating: avgRating,
-                    totalRatingsCount: { increment: 1 }
+                    totalRatingsCount: { increment: 1 },
+                    totalRides: { increment: 1 }
                 }
             });
 
-            // 4. Update Driver's total completed rides count
-            await tx.driverProfile.update({
-                where: { userId: driverId as string },
+            // 4. Update Driver's total completed rides count on User model
+            await tx.user.update({
+                where: { id: driverId as string },
                 data: { totalRides: { increment: 1 } }
             });
 
             return updatedRide;
         });
 
+        // Notify the Rider that the ride is complete (triggers the rating UI)
+        emitToUser(ride.userId, 'RIDE_COMPLETED', {
+            rideId,
+            message: 'Your ride is complete! Please take a moment to rate your driver.'
+        });
+
         res.status(200).json({ message: 'Ride marked as completed and rider rated', ride: result });
     } catch (error) {
         console.error('Complete ride and rate error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+// 6. Driver enrolls in a specific zip code to receive ride requests there
+export const enrollZipCode = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const driverId = req.user?.userId;
+        const { zipCode } = req.body;
+
+        if (!zipCode || typeof zipCode !== 'string') {
+            res.status(400).json({ message: 'Zip code is required' });
+            return;
+        }
+
+        const profile = await prisma.driverProfile.findUnique({
+            where: { userId: driverId }
+        });
+
+        if (!profile) {
+            res.status(404).json({ message: 'Driver profile not found' });
+            return;
+        }
+
+        // Handle comma-separated list
+        const cleanZip = zipCode.trim();
+        const existingZips = profile.serviceZipCodes
+            ? profile.serviceZipCodes.split(',').map(z => z.trim()).filter(z => z.length > 0)
+            : [];
+
+        if (!existingZips.includes(cleanZip)) {
+            existingZips.push(cleanZip);
+        }
+
+        const newServiceZipCodes = existingZips.join(',');
+
+        // Update the driver's service area and global zipCode mapping natively
+        const updatedProfile = await prisma.driverProfile.update({
+            where: { userId: driverId },
+            data: { serviceZipCodes: newServiceZipCodes }
+        });
+
+        await prisma.user.update({
+            where: { id: driverId },
+            data: { zipCode: cleanZip } // Global zip reflects latest added
+        });
+
+        res.status(200).json({
+            message: 'Successfully enrolled in area',
+            serviceZipCodes: updatedProfile.serviceZipCodes
+        });
+    } catch (error) {
+        console.error('Enroll zip code error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+// 7. Driver bulk enrolls in multiple state zip codes
+export const enrollBulkZipCodes = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const driverId = req.user?.userId;
+        const { zipCodes } = req.body; // Expected to be string[]
+
+        if (!Array.isArray(zipCodes) || zipCodes.length === 0) {
+            res.status(400).json({ message: 'Valid zipCodes array is required' });
+            return;
+        }
+
+        const profile = await prisma.driverProfile.findUnique({
+            where: { userId: driverId }
+        });
+
+        if (!profile) {
+            res.status(404).json({ message: 'Driver profile not found' });
+            return;
+        }
+
+        // Handle comma-separated list
+        const existingZips = profile.serviceZipCodes
+            ? profile.serviceZipCodes.split(',').map(z => z.trim()).filter(z => z.length > 0)
+            : [];
+
+        // Extract strictly new zip codes that don't exist yet
+        const newUniqueZips = zipCodes
+            .map(z => String(z).trim())
+            .filter(z => z.length > 0 && !existingZips.includes(z));
+
+        if (newUniqueZips.length === 0) {
+            res.status(200).json({
+                message: 'All provided zip codes are already enrolled',
+                serviceZipCodes: profile.serviceZipCodes
+            });
+            return;
+        }
+
+        // Append the new batch safely
+        existingZips.push(...newUniqueZips);
+        const newServiceZipCodes = existingZips.join(',');
+
+        const updatedProfile = await prisma.driverProfile.update({
+            where: { userId: driverId },
+            data: { serviceZipCodes: newServiceZipCodes }
+        });
+
+        res.status(200).json({
+            message: `Successfully enrolled in ${newUniqueZips.length} new zip codes`,
+            serviceZipCodes: updatedProfile.serviceZipCodes
+        });
+    } catch (error) {
+        console.error('Bulk enroll zip code error:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
 };

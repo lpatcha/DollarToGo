@@ -22,8 +22,26 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        const { passwordHash, ...userWithoutPassword } = user as any;
-        res.status(200).json({ user: userWithoutPassword });
+        const safeProfile: any = {
+            id: user.id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            phone: user.phone,
+            role: user.role,
+        };
+
+        if (user.role === 'DRIVER' && (user as any).driverProfile) {
+            safeProfile.driverProfile = {
+                vehicleMake: (user as any).driverProfile.vehicleMake,
+                vehicleModel: (user as any).driverProfile.vehicleModel,
+                vehicleYear: (user as any).driverProfile.vehicleYear,
+                licensePlate: (user as any).driverProfile.licensePlate,
+                serviceZipCodes: (user as any).driverProfile.serviceZipCodes,
+            };
+        }
+
+        res.status(200).json({ user: safeProfile });
     } catch (error) {
         console.error('Get user error:', error);
         res.status(500).json({ message: 'Internal server error' });
@@ -39,8 +57,26 @@ export const updateProfile = async (req: Request, res: Response): Promise<void> 
         }
 
         const user = await updateUserProfile(userId, req.body);
-        const { passwordHash, ...userWithoutPassword } = user as any;
-        res.status(200).json({ message: 'Profile updated successfully', user: userWithoutPassword });
+        const safeProfile: any = {
+            id: user.id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            phone: user.phone,
+            role: user.role,
+        };
+
+        if (user.role === 'DRIVER' && (user as any).driverProfile) {
+            safeProfile.driverProfile = {
+                vehicleMake: (user as any).driverProfile.vehicleMake,
+                vehicleModel: (user as any).driverProfile.vehicleModel,
+                vehicleYear: (user as any).driverProfile.vehicleYear,
+                licensePlate: (user as any).driverProfile.licensePlate,
+                serviceZipCodes: (user as any).driverProfile.serviceZipCodes,
+            };
+        }
+
+        res.status(200).json({ message: 'Profile updated successfully', user: safeProfile });
     } catch (error) {
         console.error('Update profile error:', error);
         res.status(500).json({ message: 'Internal server error' });
@@ -87,15 +123,15 @@ export const requestPasswordUpdate = async (req: Request, res: Response): Promis
 export const updatePassword = async (req: Request, res: Response): Promise<void> => {
     try {
         const userId = req.user?.userId;
-        const { oldPassword, newPassword, code } = req.body;
+        const { oldPassword, newPassword } = req.body;
 
         if (!userId) {
             res.status(401).json({ message: 'Unauthorized' });
             return;
         }
 
-        if (!oldPassword || !newPassword || !code) {
-            res.status(400).json({ message: 'Missing required fields (oldPassword, newPassword, code)' });
+        if (!oldPassword || !newPassword) {
+            res.status(400).json({ message: 'Missing required fields (oldPassword, newPassword)' });
             return;
         }
 
@@ -108,16 +144,6 @@ export const updatePassword = async (req: Request, res: Response): Promise<void>
         const isMatch = await comparePassword(oldPassword, user.passwordHash);
         if (!isMatch) {
             res.status(401).json({ message: 'Invalid old password' });
-            return;
-        }
-
-        if (!user.resetCode || !user.resetCodeExpiresAt || user.resetCode !== code) {
-            res.status(400).json({ message: 'Invalid verification code' });
-            return;
-        }
-
-        if (user.resetCodeExpiresAt < new Date()) {
-            res.status(400).json({ message: 'Verification code has expired' });
             return;
         }
 

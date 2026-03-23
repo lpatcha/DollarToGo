@@ -45,13 +45,18 @@ export function BottomNavigation() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex flex-col items-center justify-center w-full h-full space-y-1 transition-colors",
+                "flex flex-col items-center justify-center w-full h-full space-y-1 transition-all rounded-xl",
                 isActive ? "text-primary" : "text-text-muted hover:text-text-main"
               )}
             >
-              <Icon className={cn("w-6 h-6", isActive ? "stroke-[2.5px]" : "stroke-2")} />
+              <div className={cn(
+                "p-1.5 rounded-xl transition-all",
+                isActive ? "bg-primary/10" : "bg-transparent"
+              )}>
+                <Icon className={cn("w-6 h-6", isActive ? "stroke-[2.5px]" : "stroke-2")} />
+              </div>
               <span className={cn(
-                "text-[10px] tracking-wide uppercase",
+                "text-[10px] tracking-wide uppercase font-outfit",
                 isActive ? "font-bold" : "font-semibold"
               )}>
                 {item.name}

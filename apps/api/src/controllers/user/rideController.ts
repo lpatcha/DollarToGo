@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { PrismaClient, RideStatus, RequestStatus } from '@prisma/client';
 import { broadcastRideToZipCode } from '../../services/user/rideService';
+import { emitToUser, emitToZip } from '../../utils/socket';
 
 const prisma = new PrismaClient();
 
@@ -12,6 +13,21 @@ export const createRide = async (req: Request, res: Response): Promise<void> => 
 
         if (!userId || !fromAddress || !fromZip || !toAddress || !price) {
             res.status(400).json({ message: 'Missing required fields' });
+            return;
+        }
+
+        // Check if user already has an active ride
+        const activeRide = await prisma.ride.findFirst({
+            where: {
+                userId,
+                status: {
+                    notIn: [RideStatus.COMPLETED, RideStatus.CANCELLED]
+                }
+            }
+        });
+
+        if (activeRide) {
+            res.status(400).json({ message: 'You already have an active ride request.' });
             return;
         }
 
@@ -102,17 +118,18 @@ export const getRideHistory = async (req: Request, res: Response): Promise<void>
         if (fromDate || toDate) {
             whereClause.completedAt = {};
             if (fromDate) {
-                whereClause.completedAt.gte = new Date(fromDate as string);
+                // Force strict UTC parsing to match raw SQL boundaries
+                whereClause.completedAt.gte = new Date(`${fromDate}T00:00:00.000Z`);
             }
             if (toDate) {
-                whereClause.completedAt.lte = new Date(toDate as string);
+                whereClause.completedAt.lte = new Date(`${toDate}T23:59:59.999Z`);
             }
         }
 
-        const [rides, totalCount] = await Promise.all([
+        const [rawRides, totalCount, totalSpentAgg] = await Promise.all([
             prisma.ride.findMany({
                 where: whereClause,
-                orderBy: { completedAt: 'desc' },
+                orderBy: { createdAt: 'desc' }, // fallback to createdAt if completedAt is null for cancelled
                 skip,
                 take: limitNumber,
                 include: {
@@ -121,20 +138,37 @@ export const getRideHistory = async (req: Request, res: Response): Promise<void>
                     },
                     user: {
                         select: { firstName: true, lastName: true }
+                    },
+                    _count: {
+                        select: { ratings: true }
                     }
                 },
             }),
             prisma.ride.count({
                 where: whereClause,
             }),
+            prisma.ride.aggregate({
+                where: { ...whereClause, status: RideStatus.COMPLETED },
+                _sum: { price: true }
+            })
         ]);
 
         const totalPages = Math.ceil(totalCount / limitNumber);
+
+        const rides = rawRides.map(ride => {
+            const notRated = ride._count.ratings < 2;
+            const { _count, ...rideData } = ride;
+            return {
+                ...rideData,
+                notRated
+            };
+        });
 
         res.status(200).json({
             rides,
             pagination: {
                 totalCount,
+                totalSpent: Number(totalSpentAgg._sum.price || 0),
                 totalPages,
                 currentPage: pageNumber,
                 limit: limitNumber,
@@ -174,9 +208,12 @@ export const getAvailableDrivers = async (req: Request, res: Response): Promise<
             select: {
                 id: true,
                 firstName: true,
+                lastName: true,
                 avgRating: true,
+                totalRatingsCount: true,
+                totalRides: true,
                 driverProfile: {
-                    select: { vehicleMake: true, vehicleModel: true, totalRides: true }
+                    select: { vehicleMake: true, vehicleModel: true }
                 }
             }
         });
@@ -230,6 +267,19 @@ export const pickDriver = async (req: Request, res: Response): Promise<void> => 
             });
         });
 
+        // Socket Notifications
+        // 1. Notify the chosen driver
+        emitToUser(driverId, 'RIDE_CONFIRMED', {
+            rideId,
+            message: 'You have been picked for the ride! Please start heading to the location.'
+        });
+
+        // 2. Notify all other drivers in the zip that the ride is no longer available
+        emitToZip(ride.fromZip, 'RIDE_UNAVAILABLE', {
+            rideId,
+            message: 'This ride has been taken by another driver.'
+        });
+
         res.status(200).json({ message: 'Driver selected successfully' });
     } catch (error) {
         console.error('Pick driver error:', error);
@@ -261,6 +311,12 @@ export const increasePrice = async (req: Request, res: Response): Promise<void> 
         });
 
         broadcastRideToZipCode(rideId, updatedRide.fromZip);
+
+        // Also emit a specific update event so active drivers can update their UI price immediately
+        emitToZip(updatedRide.fromZip, 'RIDE_PRICE_UPDATED', {
+            rideId,
+            newPrice
+        });
 
         res.status(200).json({ ride: updatedRide, message: 'Price increased and rebroadcasted' });
     } catch (error) {
@@ -304,6 +360,20 @@ export const cancelRide = async (req: Request, res: Response): Promise<void> => 
                 },
                 data: { status: RequestStatus.REJECTED },
             });
+        });
+
+        // Notify the driver if one was already assigned
+        if (ride.driverId) {
+            emitToUser(ride.driverId, 'RIDE_CANCELLED', {
+                rideId,
+                message: 'The rider has cancelled this ride.'
+            });
+        }
+
+        // Notify all drivers in the zip (so it disappears from their pending list)
+        emitToZip(ride.fromZip, 'RIDE_UNAVAILABLE', {
+            rideId,
+            message: 'Ride cancelled by user.'
         });
 
         res.status(200).json({ message: 'Ride cancelled successfully' });

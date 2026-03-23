@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { Target, Search, ArrowRight, User } from 'lucide-react';
+import { ShieldCheck, Zap, DollarSign, ArrowRight, User } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -28,41 +28,53 @@ export default function HomeMapPage() {
       <div className="relative z-10 mt-auto bg-surface rounded-t-[32px] shadow-[0_-8px_30px_rgba(0,0,0,0.08)] px-5 py-6 sm:max-w-md sm:mx-auto sm:w-full">
         
         <h1 className="text-[32px] font-extrabold text-text-main mt-2 leading-tight tracking-tight">
-          Where to <span className="text-primary text-[32px]">next?</span>
+          Ride for <span className="text-primary text-[32px]">less.</span>
         </h1>
-        <p className="text-[13px] text-text-muted mt-2 mb-6 font-medium">
-          Exclusive launch: Affordable rides for first 100 users.
+        <p className="text-[14px] text-text-muted mt-2 mb-6 font-medium leading-relaxed">
+          The fair-price ride sharing platform that puts more money in driver pockets and keeps more in yours.
         </p>
 
         <Card className="border border-border/50 shadow-sm bg-white overflow-hidden rounded-[24px]">
-          <CardContent className="p-4 space-y-3">
-            
-            {/* Pickup Input */}
-            <div className="relative">
-              <label className="text-[10px] tracking-wide uppercase font-bold text-text-muted absolute left-12 top-2 z-10">
-                Pickup
-              </label>
-              <Input
-                className="pl-12 pt-5 h-[60px] bg-slate-50 border-transparent shadow-none rounded-[16px] text-[15px] font-semibold text-text-main placeholder:text-text-main focus-visible:ring-1 focus-visible:ring-border"
-                placeholder="Current Location"
-                defaultValue="Current Location"
-                leftIcon={<Target className="w-[18px] h-[18px] text-primary" />}
-              />
+          <CardContent className="p-5 space-y-5">
+            <div className="flex items-start space-x-4">
+              <div className="bg-primary/10 p-2.5 rounded-xl">
+                <DollarSign className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <h3 className="font-bold text-text-main text-[15px]">Transparent Pricing</h3>
+                <p className="text-[13px] text-text-muted">No hidden fees. You see exactly what you pay and what the driver earns.</p>
+              </div>
             </div>
 
-            {/* Destination Input */}
-            <div className="relative">
-              <Input
-                className="pl-12 h-[52px] bg-slate-50 border-transparent shadow-none rounded-[16px] text-[15px] font-medium placeholder:text-text-muted focus-visible:ring-1 focus-visible:ring-border"
-                placeholder="Enter zip code or destination"
-                leftIcon={<Search className="w-[18px] h-[18px] text-text-muted" />}
-              />
+            <div className="flex items-start space-x-4">
+              <div className="bg-blue-500/10 p-2.5 rounded-xl">
+                <Zap className="w-5 h-5 text-blue-500" />
+              </div>
+              <div>
+                <h3 className="font-bold text-text-main text-[15px]">Zero Wait Time</h3>
+                <p className="text-[13px] text-text-muted">Direct dispatch to the nearest available drivers in your zip code.</p>
+              </div>
             </div>
 
-            <Button size="lg" className="w-full mt-1 h-[52px] text-base font-semibold rounded-[16px]">
-              Request a Ride <ArrowRight className="ml-2 w-[18px] h-[18px] stroke-[2.5px]" />
-            </Button>
-            
+            <div className="flex items-start space-x-4">
+              <div className="bg-green-500/10 p-2.5 rounded-xl">
+                <ShieldCheck className="w-5 h-5 text-green-500" />
+              </div>
+              <div>
+                <h3 className="font-bold text-text-main text-[15px]">Secure & Verified</h3>
+                <p className="text-[13px] text-text-muted">All drivers undergo rigorous background checks for your peace of mind.</p>
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <Button 
+                onClick={() => window.location.href = '/login'}
+                size="lg" 
+                className="w-full h-[56px] text-base font-bold rounded-[18px] shadow-md hover:shadow-lg transition-all"
+              >
+                Join the Community <ArrowRight className="ml-2 w-[18px] h-[18px] stroke-[2.5px]" />
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

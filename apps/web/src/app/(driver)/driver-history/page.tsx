@@ -1,166 +1,155 @@
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
-import { Calendar, Truck, Banknote, ChevronDown, CheckCircle2, ChevronRight, UserCircle } from 'lucide-react';
-import { Card } from '@/components/ui/Card';
+import { Truck, Banknote, ChevronRight } from 'lucide-react';
+import { TripHistoryCard } from '@/components/ui/TripHistoryCard';
+import { DateRangePicker } from '@/components/ui/DateRangePicker';
 
-const HISTORY = [
-  {
-    id: 1,
-    date: 'OCT 24, 2023',
-    time: '2:45 PM',
-    customerName: 'John D.',
-    price: '$15.00',
-    status: 'COMPLETED',
-    fromZip: '90210',
-    toZip: '90401',
-    distance: '4.2 MILES',
-    duration: '18 MIN',
-  },
-  {
-    id: 2,
-    date: 'OCT 24, 2023',
-    time: '11:15 AM',
-    customerName: 'Sarah M.',
-    price: '$22.50',
-    status: 'COMPLETED',
-    fromZip: '90034',
-    toZip: '90045',
-    distance: '8.5 MILES',
-    duration: '24 MIN',
-  },
-  {
-    id: 3,
-    date: 'OCT 23, 2023',
-    time: '6:30 PM',
-    customerName: 'Mike T.',
-    price: '$12.00',
-    status: 'COMPLETED',
-    fromZip: '90025',
-    toZip: '90210',
-    distance: '3.1 MILES',
-    duration: '12 MIN',
-  }
-];
+import api from '@/lib/api';
+
+interface DriverRideHistory {
+  id: string;
+  user?: {
+    firstName: string;
+    lastName: string;
+  };
+  createdAt: string;
+  price: string | number;
+  status: string;
+  fromAddress: string;
+  toAddress: string;
+  estimatedMiles: string | number;
+  estimatedMinutes: string | number;
+}
 
 export default function DriverHistoryPage() {
+  // Set default dates logically matching UserHistoryPage
+  const [fromDate, setFromDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d.toISOString().split('T')[0];
+  });
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [toDate, setToDate] = useState<string>(todayStr);
+  const [rides, setRides] = useState<DriverRideHistory[]>([]);
+  const [totalEarnings, setTotalEarnings] = useState<number>(0);
+  const [totalRides, setTotalRides] = useState<number>(0);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  const fetchHistory = async () => {
+    setLoading(true);
+    try {
+      if (toDate > todayStr) {
+        alert("To Date cannot exceed the current date.");
+        setToDate(todayStr);
+        setLoading(false);
+        return;
+      }
+      if (fromDate > toDate) {
+        alert("From Date cannot be later than To Date.");
+        setFromDate(toDate);
+        setLoading(false);
+        return;
+      }
+
+      const res = await api.get('/rides/history', {
+        params: {
+          fromDate,
+          toDate,
+          limit: 10,
+          page: 1
+        }
+      });
+      setRides(res.data.rides);
+      setTotalEarnings(Number(res.data.pagination?.totalSpent) || 0);
+      setTotalRides(res.data.pagination?.totalCount || 0);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to fetch driver history');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="flex flex-col min-h-screen bg-surface px-5 py-6 pb-24 overflow-y-auto">
-      
+
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-[26px] font-extrabold text-text-main tracking-tight">Trip History</h1>
-        <div className="bg-blue-50 text-user-primary px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider">
-          DRIVER MODE
+        <div className="bg-primary/10 px-3 py-1.5 rounded-full">
+          <span className="text-[11px] font-bold text-primary tracking-widest uppercase">Driver Mode</span>
         </div>
       </div>
 
       {/* Date Range Selector */}
-      <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex items-center justify-between shadow-sm mb-4">
-        <div className="flex items-center space-x-3">
-          <Calendar className="w-5 h-5 text-user-primary" />
-          <div>
-            <span className="text-[10px] font-bold tracking-widest uppercase text-slate-400 block mb-0.5">Date Range</span>
-            <p className="text-[15px] font-bold text-text-main leading-tight">All Time (Lifetime)</p>
-          </div>
-        </div>
-        <ChevronDown className="w-5 h-5 text-slate-400" />
-      </div>
+      <DateRangePicker
+        fromDate={fromDate}
+        setFromDate={setFromDate}
+        toDate={toDate}
+        setToDate={setToDate}
+        onApply={fetchHistory}
+        loading={loading}
+      />
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 gap-3 mb-8">
         {/* Total Deliveries/Rides */}
-        <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 shadow-sm">
+        <div className="bg-white border border-border rounded-[24px] p-4 shadow-sm">
           <div className="flex items-center text-text-muted mb-2">
-            <Truck className="w-[14px] h-[14px] text-user-primary mr-1.5" />
-            <span className="text-[10px] font-bold tracking-widest uppercase text-slate-500">Total Deliveries</span>
+            <Truck className="w-[14px] h-[14px] text-primary mr-1.5" />
+            <span className="text-[10px] font-bold tracking-widest uppercase text-text-muted">Total Rides</span>
           </div>
-          <p className="text-2xl font-extrabold text-text-main">142</p>
+          <p className="text-2xl font-extrabold text-text-main">{loading ? '...' : totalRides}</p>
         </div>
 
         {/* Total Earnings */}
-        <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 shadow-sm">
+        <div className="bg-white border border-border rounded-[24px] p-4 shadow-sm">
           <div className="flex items-center text-text-muted mb-2">
-            <Banknote className="w-[14px] h-[14px] text-user-primary mr-1.5" />
-            <span className="text-[10px] font-bold tracking-widest uppercase text-slate-500">Total Earnings</span>
+            <Banknote className="w-[14px] h-[14px] text-primary mr-1.5" />
+            <span className="text-[10px] font-bold tracking-widest uppercase text-text-muted">Total Earnings</span>
           </div>
-          <p className="text-2xl font-extrabold text-user-primary">$2,845.50</p>
+          <p className="text-2xl font-extrabold text-primary">{loading ? '...' : `$${Number(totalEarnings).toFixed(2)}`}</p>
         </div>
       </div>
 
       {/* Trip List */}
-      <div className="space-y-4">
-        {HISTORY.map((trip) => (
-          <Card key={trip.id} className="bg-slate-50/50 border-transparent shadow-none p-5 rounded-[20px]">
-            
-            {/* Trip Header */}
-            <div className="flex justify-between items-start mb-5">
-              <div>
-                <p className="text-[10px] font-bold tracking-widest uppercase text-slate-400 mb-1">
-                  {trip.date} • {trip.time}
-                </p>
-                <p className="text-[17px] font-bold text-text-main">
-                  {trip.customerName}
-                </p>
-              </div>
-              <div className="text-right flex flex-col items-end">
-                <p className="text-[20px] font-extrabold text-user-primary leading-tight mb-1">
-                  {trip.price}
-                </p>
-                <div className="flex items-center space-x-1 text-emerald-500">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span className="text-[10px] font-bold tracking-widest uppercase">
-                    {trip.status}
-                  </span>
-                </div>
-              </div>
-            </div>
+      {loading ? (
+        <div className="text-center py-10 text-text-muted text-sm font-semibold">Loading your trips...</div>
+      ) : rides.length === 0 ? (
+        <div className="text-center py-10 text-text-muted text-sm font-semibold">No finished rides found for this date range.</div>
+      ) : (
+        <div className="space-y-4">
+          {rides.map((trip) => {
+            const tripDate = new Date(trip.createdAt);
+            const dateStr = tripDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            const timeStr = tripDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
-            {/* Route Timeline */}
-            <div className="relative pl-2.5 space-y-4 before:absolute before:inset-y-[10px] before:left-[13px] before:w-px before:bg-slate-200 mb-6 w-full">
-              {/* From */}
-              <div className="relative z-10 flex items-center">
-                <div className="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-[#a3c2fa] shadow-[0_0_0_2px_#f8fafc]"></div>
-                <div className="pl-6 w-full">
-                  <p className="text-[14px] font-medium text-text-main">
-                    <span className="text-slate-400 font-semibold mr-1">From:</span> {trip.fromZip}
-                  </p>
-                </div>
-              </div>
+            return (
+              <TripHistoryCard
+                key={trip.id}
+                displayName={trip.user?.firstName ? `${trip.user.firstName} ${trip.user.lastName || ''}`.trim() : 'Unknown Rider'}
+                dateStr={dateStr.toUpperCase()}
+                timeStr={timeStr.toUpperCase()}
+                price={Number(trip.price)}
+                status={trip.status}
+                isCompleted={trip.status === 'COMPLETED'}
+                fromLocation={trip.fromAddress}
+                toLocation={trip.toAddress}
 
-              {/* To */}
-              <div className="relative z-10 flex items-center">
-                <div className="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-[#fca5a5] shadow-[0_0_0_2px_#f8fafc]"></div>
-                <div className="pl-6 w-full">
-                  <p className="text-[14px] font-medium text-text-main">
-                    <span className="text-slate-400 font-semibold mr-1">To:</span> {trip.toZip}
-                  </p>
-                </div>
-              </div>
-            </div>
+              />
+            );
+          })}
+        </div>
+      )}
 
-            {/* Trip Footer Details */}
-            <div className="flex justify-between items-center pt-4 border-t border-slate-200/60">
-              <span className="text-[11px] font-bold tracking-widest text-slate-400 uppercase">
-                {trip.distance} • {trip.duration}
-              </span>
-              <Link href="/trip-details" className="flex items-center text-[12px] font-bold text-user-primary hover:underline">
-                Details <ChevronRight className="w-3.5 h-3.5 ml-0.5" />
-              </Link>
-            </div>
-
-          </Card>
-        ))}
-      </div>
-
-      {/* Pagination Dots */}
-      <div className="flex justify-center space-x-1.5 mt-8">
-        <div className="w-1.5 h-1.5 rounded-full bg-slate-300"></div>
-        <div className="w-1.5 h-1.5 rounded-full bg-user-primary"></div>
-        <div className="w-1.5 h-1.5 rounded-full bg-slate-300"></div>
-      </div>
-      
     </div>
   );
 }

@@ -12,13 +12,13 @@ export function Header() {
         </div>
         <span className="text-xl font-bold text-text-main">Dollar<span className="text-primary font-bold">To</span>Go</span>
       </Link>
-      
+
       <div className="flex items-center space-x-3">
         <Link href="/login" className="text-sm font-semibold text-text-muted hover:text-text-main transition-colors">
           Login
         </Link>
         <Link href="/register">
-          <Button size="sm" className="bg-text-main text-white hover:bg-slate-800 rounded-full px-5 h-8">
+          <Button size="sm" className="bg-primary text-white hover:opacity-90 rounded-full px-5 h-8">
             Register
           </Button>
         </Link>

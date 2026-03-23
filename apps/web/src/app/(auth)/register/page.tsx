@@ -1,91 +1,240 @@
-"use client";
+'use client';
 
-import React, { useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, User, Car } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
+import React from 'react';
+import { 
+  Box, 
+  Container, 
+  Typography, 
+  TextField, 
+  Button, 
+  Paper, 
+  Link, 
+  Stack,
+  IconButton,
+  InputAdornment,
+  Divider,
+  Alert,
+  ToggleButton,
+  ToggleButtonGroup
+} from '@mui/material';
+import { Eye, EyeOff, UserPlus } from 'lucide-react';
+import { useDispatch, useSelector } from 'react-redux';
+import { RootState } from '@/store/rootReducer';
+import { loginFailure } from '@/store/slices/authSlice'; // Re-using for simplicity in demo
+import api from '@/lib/api';
 
-export default function RegisterPage() {
-  const [role, setRole] = useState<'USER' | 'DRIVER'>('USER');
+export default function SignupPage() {
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [role, setRole] = React.useState<'USER' | 'DRIVER'>('USER');
+  const [formData, setFormData] = React.useState({
+    email: '',
+    password: '',
+    name: '',
+    mobile: ''
+  });
+  
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState('');
+
+  const handleRoleChange = (
+    event: React.MouseEvent<HTMLElement>,
+    newRole: 'USER' | 'DRIVER',
+  ) => {
+    if (newRole !== null) {
+      setRole(newRole);
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    
+    try {
+      const response = await api.post('/auth/register', { ...formData, role });
+      // Redirect to login after successful signup
+      window.location.href = '/login';
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Registration failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen flex flex-col bg-background px-4 py-6 max-w-lg mx-auto">
-      {/* Top Header */}
-      <div className="flex items-center justify-between mb-8 relative">
-        <Link href="/login" className="text-primary hover:bg-primary/10 p-2 rounded-full transition-colors z-10">
-          <ArrowLeft className="w-6 h-6" />
-        </Link>
-        <h1 className="text-lg font-bold text-text-main absolute left-1/2 -translate-x-1/2">
-          Create Account
-        </h1>
-        <div className="w-10"></div> {/* Spacer for centering */}
-      </div>
+    <Box 
+      sx={{ 
+        minHeight: '100vh', 
+        display: 'flex', 
+        alignItems: 'center', 
+        bgcolor: 'background.default',
+        backgroundImage: 'radial-gradient(circle at 80% 20%, rgba(0, 208, 132, 0.08) 0%, transparent 50%), radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 50%)',
+        py: 4
+      }}
+    >
+      <Container maxWidth="sm">
+        <Paper 
+          elevation={0}
+          sx={{ 
+            p: { xs: 3, md: 6 }, 
+            borderRadius: 4,
+            bgcolor: 'background.paper',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.02)',
+            border: '1px solid',
+            borderColor: 'divider',
+          }}
+        >
+          <Stack spacing={4}>
+            <Box textAlign="center">
+              <Typography 
+                variant="h4" 
+                sx={{ 
+                  fontFamily: 'var(--font-outfit)',
+                  fontWeight: 800, 
+                  background: (theme) => `linear-gradient(to right, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent'
+                }}
+              >
+                Join DollarToGo
+              </Typography>
+              <Typography variant="body1" color="text.secondary">
+                Start your journey with us today.
+              </Typography>
+            </Box>
 
-      <div className="flex flex-col mb-8">
-        <h2 className="text-3xl font-bold text-text-main mb-2">Join DollarToGo</h2>
-        <p className="text-text-muted text-base">
-          Fill in your details to get started with our platform.
-        </p>
-      </div>
+            <Box display="flex" justifyContent="center">
+              <ToggleButtonGroup
+                color="primary"
+                value={role}
+                exclusive
+                onChange={handleRoleChange}
+                aria-label="Platform"
+                sx={{ 
+                  backgroundColor: 'rgba(0,0,0,0.04)',
+                  borderRadius: 3,
+                  p: 0.5,
+                  '& .MuiToggleButton-root': {
+                    px: 4,
+                    borderRadius: 2.5,
+                    border: 'none',
+                    color: 'text.secondary',
+                    '&.Mui-selected': {
+                      backgroundColor: 'primary.main',
+                      color: 'white',
+                      '&:hover': { backgroundColor: 'primary.dark' }
+                    }
+                  }
+                }}
+              >
+                <ToggleButton value="USER">Rider</ToggleButton>
+                <ToggleButton value="DRIVER">Driver</ToggleButton>
+              </ToggleButtonGroup>
+            </Box>
 
-      <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
-        <div className="grid grid-cols-2 gap-4">
-          <Input label="First Name" placeholder="John" />
-          <Input label="Last Name" placeholder="Doe" />
-        </div>
+            {error && (
+              <Alert severity="error" variant="outlined" sx={{ borderRadius: 2 }}>
+                {error}
+              </Alert>
+            )}
 
-        <Input label="Email" type="email" placeholder="example@mail.com" />
-        
-        <Input label="Phone Number" type="tel" placeholder="+1 (555) 000-0000" />
-        
-        <Input label="Password" type="password" placeholder="••••••••" />
+            <form onSubmit={handleSubmit}>
+              <Stack spacing={3}>
+                <TextField
+                  fullWidth
+                  label="Full Name"
+                  name="name"
+                  variant="outlined"
+                  value={formData.name}
+                  onChange={handleChange}
+                  required
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+                />
+                <TextField
+                  fullWidth
+                  label="Email Address"
+                  name="email"
+                  variant="outlined"
+                  type="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  required
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+                />
+                 <TextField
+                  fullWidth
+                  label="Mobile Number"
+                  name="mobile"
+                  variant="outlined"
+                  value={formData.mobile}
+                  onChange={handleChange}
+                  required
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+                />
+                <TextField
+                  fullWidth
+                  label="Password"
+                  name="password"
+                  variant="outlined"
+                  type={showPassword ? 'text' : 'password'}
+                  value={formData.password}
+                  onChange={handleChange}
+                  required
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          onClick={() => setShowPassword(!showPassword)}
+                          edge="end"
+                        >
+                          {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 3 } }}
+                />
 
-        <div className="space-y-3 pt-2">
-          <label className="text-sm font-medium leading-none text-text-main">
-            I want to join as a:
-          </label>
-          <div className="grid grid-cols-2 gap-4">
-            <button
-              type="button"
-              onClick={() => setRole('USER')}
-              className={`flex items-center justify-center p-4 border rounded-2xl transition-all ${
-                role === 'USER' 
-                  ? 'border-primary bg-primary/5 text-primary' 
-                  : 'border-border bg-surface text-text-muted hover:bg-slate-50'
-              }`}
-            >
-              <User className="w-5 h-5 mr-3" />
-              <span className="font-semibold">User</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setRole('DRIVER')}
-              className={`flex items-center justify-center p-4 border rounded-2xl transition-all ${
-                role === 'DRIVER' 
-                  ? 'border-primary bg-primary/5 text-primary' 
-                  : 'border-border bg-surface text-text-muted hover:bg-slate-50'
-              }`}
-            >
-              <Car className="w-5 h-5 mr-3" />
-              <span className="font-semibold">Driver</span>
-            </button>
-          </div>
-        </div>
+                <Button
+                  fullWidth
+                  variant="contained"
+                  size="large"
+                  type="submit"
+                  disabled={loading}
+                  startIcon={<UserPlus size={20} />}
+                  sx={{ 
+                    borderRadius: 3, 
+                    py: 1.5,
+                    fontSize: '1rem',
+                    textTransform: 'none'
+                  }}
+                >
+                  {loading ? 'Creating Account...' : 'Create Account'}
+                </Button>
+              </Stack>
+            </form>
 
-        <Button type="submit" className="w-full mt-4" size="lg">
-          Create Account
-        </Button>
-      </form>
-
-      <div className="mt-8 text-center pb-6">
-        <p className="text-text-main text-[15px]">
-          Already have an account?{' '}
-          <Link href="/login" className="text-primary font-medium hover:underline">
-            Log in
-          </Link>
-        </p>
-      </div>
-    </div>
+            <Typography variant="body2" color="text.secondary" textAlign="center">
+              Already have an account?{' '}
+              <Link 
+                href="/login" 
+                sx={{ 
+                  color: 'primary.main', 
+                  textDecoration: 'none', 
+                  fontWeight: 600,
+                  '&:hover': { textDecoration: 'underline' }
+                }}
+              >
+                Sign in
+              </Link>
+            </Typography>
+          </Stack>
+        </Paper>
+      </Container>
+    </Box>
   );
 }

@@ -1,7 +1,8 @@
 import React from 'react';
 import Link from 'next/link';
 import { BottomNavigation } from '@/components/ui/BottomNavigation';
-import { Bell } from 'lucide-react';
+import { User } from 'lucide-react';
+import { RoleGuard } from '@/components/auth/RoleGuard';
 
 // We could technically reuse the BottomNavigation but swap the items for drivers, 
 // for now we'll use a modified generic one or build a specific DriverNavigation later.
@@ -14,15 +15,11 @@ function DriverHeader() {
         <span className="text-xl text-text-main font-bold">Dollar<span className="text-primary">To</span>Go</span>
       </div>
       
-      <div className="flex items-center space-x-4">
-        <button className="text-text-muted hover:text-text-main transition-colors">
-          <Bell className="w-6 h-6" />
-        </button>
-        <div className="w-8 h-8 rounded-full bg-slate-200 overflow-hidden border border-border">
-          {/* Placeholder for avatar */}
-          <div className="w-full h-full bg-[url('https://api.dicebear.com/7.x/avataaars/svg?seed=Felix&backgroundColor=e2e8f0')] bg-cover"></div>
+      <Link href="/driver-account" className="flex items-center cursor-pointer">
+        <div className="w-9 h-9 rounded-full bg-background flex items-center justify-center border-2 border-primary/20 text-text-muted hover:bg-slate-100 transition-colors">
+          <User className="w-5 h-5" />
         </div>
-      </div>
+      </Link>
     </header>
   );
 }
@@ -35,7 +32,9 @@ export default function DriverLayout({ children }: { children: React.ReactNode }
       <main className="w-full h-full max-w-lg mx-auto bg-surface min-h-screen relative shadow-sm flex flex-col">
         <DriverHeader />
         <div className="flex-1">
-          {children}
+          <RoleGuard allowedRole="DRIVER">
+            {children}
+          </RoleGuard>
         </div>
       </main>
       <DriverBottomNavigation />
