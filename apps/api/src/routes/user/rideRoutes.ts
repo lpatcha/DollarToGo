@@ -7,21 +7,29 @@ const router = Router();
 // Protect all ride routes
 router.use(authenticate);
 
-// Shared endpoints
+// ----------------------------------------------------
+// STATIC ROUTES
+// ----------------------------------------------------
+
+// Shared history endpoint
 router.get('/history', requireRole(['USER', 'DRIVER', 'ADMIN']), getRideHistory);
+
+// User-exclusive base endpoints
+router.post('/', requireRole(['USER', 'ADMIN']), createRide);
+router.get('/my', requireRole(['USER', 'ADMIN']), getMyRides);
+
+
+// ----------------------------------------------------
+// DYNAMIC ROUTES (With `/:id`)
+// ----------------------------------------------------
+
+// User-exclusive interactive endpoints
+router.get('/:id/drivers', requireRole(['USER', 'ADMIN']), getAvailableDrivers);
+router.put('/:id/pick-driver', requireRole(['USER', 'ADMIN']), pickDriver);
+router.put('/:id/increase-price', requireRole(['USER', 'ADMIN']), increasePrice);
+router.put('/:id/cancel', requireRole(['USER', 'ADMIN']), cancelRide);
+
+// Shared wildcard detail endpoint (Must be DEAD LAST to avoid shadowing)
 router.get('/:id', requireRole(['USER', 'DRIVER', 'ADMIN']), getRideDetails);
-
-// User-exclusive endpoints
-router.use(requireRole(['USER', 'ADMIN']));
-
-// Standard Rider endpoints
-router.post('/', createRide);
-router.get('/my', getMyRides);
-
-// Interactive Rider-to-Driver endpoints
-router.get('/:id/drivers', getAvailableDrivers);
-router.put('/:id/pick-driver', pickDriver);
-router.put('/:id/increase-price', increasePrice);
-router.put('/:id/cancel', cancelRide);
 
 export default router;
