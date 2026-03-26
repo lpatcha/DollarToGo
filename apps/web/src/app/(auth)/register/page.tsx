@@ -191,7 +191,7 @@ export default function SignupPage() {
         display: 'flex', 
         alignItems: 'center', 
         bgcolor: 'background.default',
-        backgroundImage: 'radial-gradient(circle at 80% 20%, rgba(0, 208, 132, 0.08) 0%, transparent 50%), radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 50%)',
+        backgroundImage: 'radial-gradient(circle at 20% 20%, rgba(0, 208, 132, 0.08) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 50%)',
         py: 4
       }}
     >
@@ -214,14 +214,18 @@ export default function SignupPage() {
                 sx={{ 
                   fontFamily: 'var(--font-outfit)',
                   fontWeight: 800, 
+                  letterSpacing: '-0.02em',
                   background: (theme) => `linear-gradient(to right, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent'
                 }}
               >
-                Join DollarToGo
+                DollarToGo
               </Typography>
-              <Typography variant="body1" color="text.secondary">
+              <Typography variant="h6" color="text.primary" sx={{ fontWeight: 700, mt: 0.5 }}>
+                Join our platform
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
                 Start your journey with us today.
               </Typography>
             </Box>

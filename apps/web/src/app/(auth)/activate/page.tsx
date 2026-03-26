@@ -81,7 +81,7 @@ export default function ActivatePage() {
         display: 'flex', 
         alignItems: 'center', 
         bgcolor: 'background.default',
-        backgroundImage: 'radial-gradient(circle at 80% 20%, rgba(0, 208, 132, 0.08) 0%, transparent 50%), radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 50%)',
+        backgroundImage: 'radial-gradient(circle at 20% 20%, rgba(0, 208, 132, 0.08) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 50%)',
         py: 4
       }}
     >
@@ -134,12 +134,25 @@ export default function ActivatePage() {
                 </Box>
                 <Typography 
                   variant="h4" 
+                  component="h1"
+                  gutterBottom
                   sx={{ 
-                    fontWeight: 800, 
                     fontFamily: 'var(--font-outfit)',
+                    fontWeight: 800, 
+                    letterSpacing: '-0.02em',
                     background: (theme) => `linear-gradient(to right, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent'
+                  }}
+                >
+                  DollarToGo
+                </Typography>
+                <Typography 
+                  variant="h6" 
+                  sx={{ 
+                    fontWeight: 700, 
+                    color: 'text.primary',
+                    mb: 2
                   }}
                 >
                   Account Inactive
@@ -208,12 +221,25 @@ export default function ActivatePage() {
                 </Box>
                 <Typography 
                   variant="h4" 
+                  component="h1"
+                  gutterBottom
                   sx={{ 
-                    fontWeight: 800, 
                     fontFamily: 'var(--font-outfit)',
+                    fontWeight: 800, 
+                    letterSpacing: '-0.02em',
                     background: (theme) => `linear-gradient(to right, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent'
+                  }}
+                >
+                  DollarToGo
+                </Typography>
+                <Typography 
+                  variant="h6" 
+                  sx={{ 
+                    fontWeight: 700, 
+                    color: 'text.primary',
+                    mb: 1
                   }}
                 >
                   Account Activated!
@@ -270,10 +296,25 @@ export default function ActivatePage() {
                 </Box>
                 <Typography 
                   variant="h4" 
+                  component="h1"
+                  gutterBottom
                   sx={{ 
-                    fontWeight: 800, 
                     fontFamily: 'var(--font-outfit)',
-                    color: 'error.main'
+                    fontWeight: 800, 
+                    letterSpacing: '-0.02em',
+                    background: (theme) => `linear-gradient(to right, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent'
+                  }}
+                >
+                  DollarToGo
+                </Typography>
+                <Typography 
+                  variant="h6" 
+                  sx={{ 
+                    fontWeight: 700, 
+                    color: 'error.main',
+                    mb: 1
                   }}
                 >
                   Activation Failed
