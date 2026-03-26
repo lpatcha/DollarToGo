@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
-import { PrismaClient, Role } from '@prisma/client';
+import { PrismaClient, Role, VerificationType } from '@prisma/client';
 import { hashPassword, comparePassword } from '../../utils/password';
 import { generateToken, verifyToken } from '../../utils/jwt';
-import { sendEmail } from '../../utils/email';
+import { sendEmail, getActivationTemplate, getOTPTemplate, getPasswordResetTemplate } from '../../utils/email';
+import { generateVerificationToken, clearUserTokens } from '../../utils/tokenUtils';
 import crypto from 'crypto';
 
 const prisma = new PrismaClient();
@@ -36,10 +37,11 @@ export const register = async (req: Request, res: Response): Promise<void> => {
                     phone,
                     zipCode,
                     city,
+                    isActive: false, // Default to inactive
                 },
             });
 
-            // If registering as a DRIVER, create the profile immediately
+            // Create Driver Profile if necessary
             if (userRole === Role.DRIVER) {
                 if (!driverDetails) {
                     throw new Error('Driver details are required when registering as a driver');
@@ -58,22 +60,69 @@ export const register = async (req: Request, res: Response): Promise<void> => {
                 });
             }
 
-            return newUser;
+            // Generate activation code via reusable utility
+            const tokenRecord = await generateVerificationToken(
+                tx, 
+                newUser.id, 
+                VerificationType.ACCOUNT_ACTIVATION
+            );
+
+            return { newUser, activationToken: tokenRecord.token };
         });
 
-        const token = generateToken({ userId: user.id, role: user.role });
+        // Send activation email
+        try {
+            const html = getActivationTemplate(firstName, user.activationToken);
+            await sendEmail(email, 'Activate Your DollarToGo Account', html);
+        } catch (mailError) {
+            console.error('Failed to send activation email:', mailError);
+            // We don't fail registration if mail fails, but we might want to log it
+        }
+
         res.status(201).json({
-            token,
-            user: {
-                id: user.id,
-                email: user.email,
-                role: user.role,
-                firstName: user.firstName,
-                lastName: user.lastName,
-            },
+            message: 'Your account has been created. Please check your email and activate your account through the link sent to your mail id.',
+            email: user.newUser.email
         });
     } catch (error) {
         console.error('Registration error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+export const activateAccount = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { code } = req.body;
+
+        if (!code) {
+            res.status(400).json({ message: 'Activation code is required' });
+            return;
+        }
+
+        const verificationToken = await prisma.verificationToken.findFirst({
+            where: {
+                token: code,
+                type: VerificationType.ACCOUNT_ACTIVATION,
+                expiresAt: { gt: new Date() }
+            }
+        });
+
+        if (!verificationToken) {
+            res.status(400).json({ message: 'Invalid or expired activation code' });
+            return;
+        }
+
+        await prisma.$transaction([
+            prisma.user.update({
+                where: { id: verificationToken.userId },
+                data: { isActive: true }
+            }),
+            // Use reusable helper to clear ALL tokens for this user
+            clearUserTokens(prisma, verificationToken.userId)
+        ]);
+
+        res.status(200).json({ message: 'Account activated successfully. You can now log in.' });
+    } catch (error) {
+        console.error('Account activation error:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
 };
@@ -118,6 +167,15 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
+        if (!user.isActive) {
+            res.status(403).json({ 
+                message: 'Account not activated. Please check your email for the activation link.',
+                email: user.email,
+                requiresActivation: true
+            });
+            return;
+        }
+
         const isMatch = await comparePassword(password, user.passwordHash);
         if (!isMatch) {
             res.status(401).json({ message: 'Invalid credentials' });
@@ -152,31 +210,30 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
 
         const user = await prisma.user.findUnique({ where: { email } });
         if (!user) {
-            // Act as if it succeeded to prevent email enumeration attacks
+            // Anti-enumeration: act successful
             res.status(200).json({ message: 'If an account with that email exists, a password reset link has been sent.' });
             return;
         }
 
-        // Generate a secure unique token
-        const resetToken = crypto.randomBytes(32).toString('hex');
-        const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
+        // Clear ALL existing tokens (Activation, OTPs, etc.) for a fresh, secure state
+        await clearUserTokens(prisma, user.id);
 
-        await prisma.user.update({
-            where: { id: user.id },
-            data: {
-                resetCode: resetToken,
-                resetCodeExpiresAt: expiresAt,
-            },
-        });
+        // Generate a secure reset token via reusable utility
+        const tokenRecord = await generateVerificationToken(
+            prisma,
+            user.id,
+            VerificationType.PASSWORD_RESET,
+            32, // Length
+            30  // 30 minute expiry
+        );
 
-        // In a real application, you'd use your actual frontend URL, e.g., from an environment variable:
-        // const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-        const resetLink = `http://localhost:3000/auth/reset-password?code=${resetToken}`;
-
-        const subject = 'Password Reset Request';
-        const text = `Hi ${user.firstName},\n\nYou requested a password reset. Please click the link below to reset your password:\n\n${resetLink}\n\nThis link will expire in 10 minutes.\n\nIf you did not request this, please ignore this email.`;
-
-        await sendEmail(user.email, subject, text);
+        // Send reset email with robust template
+        try {
+            const html = getPasswordResetTemplate(user.firstName, tokenRecord.token);
+            await sendEmail(user.email, 'Password Reset Request', html);
+        } catch (mailError) {
+            console.error('Forgot password mail error:', mailError);
+        }
 
         res.status(200).json({ message: 'If an account with that email exists, a password reset link has been sent.' });
     } catch (error) {
@@ -194,34 +251,76 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
-        const user = await prisma.user.findFirst({
+        const verificationToken = await prisma.verificationToken.findFirst({
             where: {
-                resetCode: code,
-                resetCodeExpiresAt: {
-                    gt: new Date(), // Code must not be expired
-                },
-            },
+                token: code,
+                type: VerificationType.PASSWORD_RESET,
+                expiresAt: { gt: new Date() }
+            }
         });
 
-        if (!user) {
+        if (!verificationToken) {
             res.status(400).json({ message: 'Invalid or expired reset token' });
             return;
         }
 
         const passwordHash = await hashPassword(newPassword);
 
-        await prisma.user.update({
-            where: { id: user.id },
-            data: {
-                passwordHash,
-                resetCode: null,
-                resetCodeExpiresAt: null,
-            },
-        });
+        await prisma.$transaction([
+            prisma.user.update({
+                where: { id: verificationToken.userId },
+                data: { passwordHash }
+            }),
+            // Use reusable helper to clear ALL tokens for this user
+            clearUserTokens(prisma, verificationToken.userId)
+        ]);
 
         res.status(200).json({ message: 'Password has been successfully reset' });
     } catch (error) {
         console.error('Reset password error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+export const resendActivation = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            res.status(400).json({ message: 'Email is required' });
+            return;
+        }
+
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user) {
+            // Anti-enumeration: act successful
+            res.status(200).json({ message: 'If an account exists, a new activation link has been sent.' });
+            return;
+        }
+
+        if (user.isActive) {
+            res.status(400).json({ message: 'This account is already active. Please log in.' });
+            return;
+        }
+
+        // Generate activation code via reusable utility
+        const tokenRecord = await generateVerificationToken(
+            prisma, 
+            user.id, 
+            VerificationType.ACCOUNT_ACTIVATION
+        );
+
+        // Send activation email
+        try {
+            const html = getActivationTemplate(user.firstName, tokenRecord.token);
+            await sendEmail(user.email, 'Activate Your DollarToGo Account (New Link)', html);
+        } catch (mailError) {
+            console.error('Failed to send resend activation email:', mailError);
+        }
+
+        res.status(200).json({ message: 'A new activation link has been sent to your email.' });
+    } catch (error) {
+        console.error('Resend activation error:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
 };

@@ -4,7 +4,9 @@ interface User {
   id: string;
   email: string;
   role: 'USER' | 'DRIVER' | 'ADMIN';
-  name?: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
 }
 
 interface AuthState {

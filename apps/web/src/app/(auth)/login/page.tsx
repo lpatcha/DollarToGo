@@ -122,7 +122,7 @@ export default function LoginPage() {
 
                 <Box display="flex" justifyContent="space-between" alignItems="center">
                   <Link
-                    href="#"
+                    href="/reset-password"
                     variant="body2"
                     sx={{
                       color: 'primary.main',
