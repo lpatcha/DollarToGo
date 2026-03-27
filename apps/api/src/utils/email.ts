@@ -1,14 +1,7 @@
 import nodemailer from 'nodemailer';
-import dns from 'node:dns';
-
-// Fix for ENETUNREACH with IPv6 on cloud hosts like Render
-// Forced Node.js to prioritize IPv4 when resolving Gmail's SMTP server
-if (typeof dns.setDefaultResultOrder === 'function') {
-    dns.setDefaultResultOrder('ipv4first');
-}
+import { lookup as dnsLookup } from 'node:dns';
 
 // Email configuration from environment variables
-// HOST and PORT are optional if using 'service'
 const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587'); 
 const SMTP_USER = process.env.SMTP_USER;
@@ -17,8 +10,6 @@ const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 
 // More robust transport configuration
 const createTransporter = () => {
-    const isGmail = SMTP_HOST.includes('gmail.com');
-
     console.log(`🔌 Initializing SMTP with host: ${SMTP_HOST}, port: ${SMTP_PORT}, user: ${SMTP_USER}`);
 
     // Manual configuration is often more stable in cloud environments like Render
@@ -29,6 +20,11 @@ const createTransporter = () => {
         auth: {
             user: SMTP_USER,
             pass: SMTP_PASS?.replace(/\s/g, ''), // Auto-remove spaces from App Password
+        },
+        // THE ULTIMATE FIX: Force the socket lookup to ignore IPv6 entirely
+        // This prevents ENETUNREACH errors on cloud hosts like Render
+        lookup: (hostname: string, options: any, callback: (err: Error | null, address: string, family: number) => void) => {
+            return dnsLookup(hostname, { family: 4 }, callback);
         },
         tls: {
             // This is often required for cloud providers to prevent SSL handshake errors
