@@ -2,9 +2,9 @@ import nodemailer from 'nodemailer';
 import { lookup as dnsLookup } from 'node:dns';
 
 // Email configuration from environment variables
-// Using hardcoded IPv4 for Gmail temporarily to bypass unreachable IPv6 routes on Render
-const SMTP_HOST = '74.125.142.108'; // IPv4 of smtp.gmail.com
-const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587'); 
+// Trying Google's Relay server as direct SMTP (smtp.gmail.com) is being timed out by Render
+const SMTP_HOST = 'smtp-relay.gmail.com';
+const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587');
 const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASS = process.env.SMTP_PASS;
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
