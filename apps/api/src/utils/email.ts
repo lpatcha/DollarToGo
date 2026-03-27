@@ -1,29 +1,47 @@
 import nodemailer from 'nodemailer';
 
 // Email configuration from environment variables
+// HOST and PORT are optional if using 'service'
 const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
-const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587');
-const SMTP_USER = process.env.SMTP_USER || 'lokeshp3098@gmail.com';
-const SMTP_PASS = process.env.SMTP_PASS || 'Srinivas@98';
+const SMTP_PORT = parseInt(process.env.SMTP_PORT || '465'); // Default to 465 for SSL (more reliable on cloud)
+const SMTP_USER = process.env.SMTP_USER;
+const SMTP_PASS = process.env.SMTP_PASS;
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 
-const transporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: SMTP_PORT,
-    secure: SMTP_PORT === 465, // true for 465, false for other ports
-    auth: {
-        user: SMTP_USER,
-        pass: SMTP_PASS,
-    },
-});
+// More robust transport configuration
+const createTransporter = () => {
+    // If it's Gmail, using 'service' is more reliable than manual host/port
+    if (SMTP_HOST.includes('gmail.com')) {
+        return nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: SMTP_USER,
+                pass: SMTP_PASS,
+            },
+        });
+    }
+
+    // Default SMTP configuration
+    return nodemailer.createTransport({
+        host: SMTP_HOST,
+        port: SMTP_PORT,
+        secure: SMTP_PORT === 465, // true for 465, false for other ports
+        auth: {
+            user: SMTP_USER,
+            pass: SMTP_PASS,
+        },
+    });
+};
+
+const transporter = createTransporter();
 
 export const sendEmail = async (to: string, subject: string, html: string): Promise<void> => {
     try {
         if (!SMTP_USER || !SMTP_PASS) {
-            console.log('\n--- MOCK EMAIL (No SMTP credentials) ---');
+            console.warn('\n⚠️  EMAIL NOT SENT: Missing SMTP_USER or SMTP_PASS environment variables.');
+            console.log('--- MOCK EMAIL ---');
             console.log(`To: ${to}`);
             console.log(`Subject: ${subject}`);
-            console.log(`Body:\n${html}`);
             console.log('------------------\n');
             return;
         }
@@ -34,9 +52,14 @@ export const sendEmail = async (to: string, subject: string, html: string): Prom
             subject,
             html,
         });
-    } catch (error) {
-        console.error('Email delivery error:', error);
-        throw new Error('Failed to send email');
+
+        console.log(`✅ Email sent successfully to ${to}`);
+    } catch (error: any) {
+        console.error('❌ Email delivery error:', error.message || error);
+        // Don't throw if we want the rest of the flow (like registration) to succeed even if email fails, 
+        // OR throw to ensure users know their action wasn't fully completed.
+        // For activation/reset, we usually want to know if it failed.
+        throw new Error('Failed to send email. Please check your SMTP configuration.');
     }
 };
 
