@@ -1,69 +1,45 @@
-import nodemailer from 'nodemailer';
-import { lookup as dnsLookup } from 'node:dns';
-
-// Email configuration from environment variables
-// Trying Google's Relay server as direct SMTP (smtp.gmail.com) is being timed out by Render
-const SMTP_HOST = 'smtp-relay.gmail.com';
-const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587');
-const SMTP_USER = process.env.SMTP_USER;
-const SMTP_PASS = process.env.SMTP_PASS;
+// Using direct API call to Brevo to avoid buggy SDK constructor issues
+const BREVO_API_KEY = process.env.BREVO_API_KEY || '';
+const SMTP_USER = process.env.SMTP_USER || 'no-reply@dollartogo.com';
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
-
-// More robust transport configuration
-const createTransporter = () => {
-    console.log(`🔌 Initializing SMTP with host: ${SMTP_HOST}, port: ${SMTP_PORT}, user: ${SMTP_USER}`);
-
-    // Manual configuration is often more stable in cloud environments like Render
-    return nodemailer.createTransport({
-        host: SMTP_HOST,
-        port: SMTP_PORT,
-        secure: SMTP_PORT === 465, // SSL for 465, false for 587 (STARTTLS)
-        auth: {
-            user: SMTP_USER,
-            pass: SMTP_PASS?.replace(/\s/g, ''), // Auto-remove spaces from App Password
-        },
-        // THE ULTIMATE FIX: Force the socket lookup to ignore IPv6 entirely
-        // This prevents ENETUNREACH errors on cloud hosts like Render
-        lookup: (hostname: string, options: any, callback: (err: Error | null, address: string, family: number) => void) => {
-            return dnsLookup(hostname, { family: 4 }, callback);
-        },
-        tls: {
-            // This is often required for cloud providers to prevent SSL handshake errors
-            rejectUnauthorized: false
-        },
-        connectionTimeout: 20000, // 20 seconds
-        greetingTimeout: 15000,   // 15 seconds
-        socketTimeout: 45000,     // 45 seconds
-    } as any);
-};
-
-const transporter = createTransporter();
 
 export const sendEmail = async (to: string, subject: string, html: string): Promise<void> => {
     try {
-        if (!SMTP_USER || !SMTP_PASS) {
-            console.warn('\n⚠️  EMAIL NOT SENT: Missing SMTP_USER or SMTP_PASS environment variables.');
-            console.log('--- MOCK EMAIL ---');
-            console.log(`To: ${to}`);
-            console.log(`Subject: ${subject}`);
-            console.log('------------------\n');
+        console.log(`📧 Attempting to send email to: ${to} | Subject: ${subject}`);
+        
+        if (!BREVO_API_KEY) {
+            console.warn('\n⚠️  EMAIL NOT SENT: Missing BREVO_API_KEY environment variable.');
             return;
         }
 
-        await transporter.sendMail({
-            from: `"DollarToGo" <${SMTP_USER}>`,
-            to,
-            subject,
-            html,
+        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+                'accept': 'application/json',
+                'api-key': BREVO_API_KEY,
+                'content-type': 'application/json'
+            },
+            body: JSON.stringify({
+                sender: { name: "DollarToGo", email: SMTP_USER },
+                to: [{ email: to }],
+                subject: subject,
+                htmlContent: html
+            })
         });
 
-        console.log(`✅ Email sent successfully to ${to}`);
+        console.log(`📡 Brevo API Response Status: ${response.status}`);
+
+        if (!response.ok) {
+            const errorBody = await response.json();
+            console.error('❌ Brevo API Error Detail:', JSON.stringify(errorBody));
+            throw new Error(errorBody.message || `Brevo API error: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log(`✅ Email accepted by Brevo! Message ID: ${result.messageId}`);
     } catch (error: any) {
-        console.error('❌ Email delivery error:', error.message || error);
-        // Don't throw if we want the rest of the flow (like registration) to succeed even if email fails, 
-        // OR throw to ensure users know their action wasn't fully completed.
-        // For activation/reset, we usually want to know if it failed.
-        throw new Error('Failed to send email. Please check your SMTP configuration.');
+        console.error('❌ Brevo delivery error:', error.message || error);
+        throw new Error('Failed to send email. Please check your Brevo configuration.');
     }
 };
 
