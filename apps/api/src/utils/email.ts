@@ -23,6 +23,9 @@ const createTransporter = () => {
             user: SMTP_USER,
             pass: SMTP_PASS?.replace(/\s/g, ''), // Auto-remove spaces from App Password
         },
+        // Force IPv4 (fixes ENETUNREACH errors on cloud hosts like Render)
+        // @ts-ignore - family is a valid SMTP transport option
+        family: 4, 
         tls: {
             // This is often required for cloud providers to prevent SSL handshake errors
             rejectUnauthorized: false
@@ -30,7 +33,7 @@ const createTransporter = () => {
         connectionTimeout: 20000, // 20 seconds
         greetingTimeout: 15000,   // 15 seconds
         socketTimeout: 45000,     // 45 seconds
-    });
+    } as any);
 };
 
 const transporter = createTransporter();
