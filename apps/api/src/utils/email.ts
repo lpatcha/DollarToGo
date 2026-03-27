@@ -10,26 +10,26 @@ const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 
 // More robust transport configuration
 const createTransporter = () => {
-    // If it's Gmail, using 'service' is more reliable than manual host/port
-    if (SMTP_HOST.includes('gmail.com')) {
-        return nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: SMTP_USER,
-                pass: SMTP_PASS,
-            },
-        });
-    }
+    const isGmail = SMTP_HOST.includes('gmail.com');
 
-    // Default SMTP configuration
+    console.log(`🔌 Initializing SMTP with host: ${SMTP_HOST}, port: ${SMTP_PORT}, user: ${SMTP_USER}`);
+
+    // Manual configuration is often more stable in cloud environments like Render
     return nodemailer.createTransport({
         host: SMTP_HOST,
         port: SMTP_PORT,
-        secure: SMTP_PORT === 465, // true for 465, false for other ports
+        secure: SMTP_PORT === 465, // SSL for 465, false for 587 (STARTTLS)
         auth: {
             user: SMTP_USER,
-            pass: SMTP_PASS,
+            pass: SMTP_PASS?.replace(/\s/g, ''), // Auto-remove spaces from App Password
         },
+        tls: {
+            // This is often required for cloud providers to prevent SSL handshake errors
+            rejectUnauthorized: false
+        },
+        connectionTimeout: 20000, // 20 seconds
+        greetingTimeout: 15000,   // 15 seconds
+        socketTimeout: 45000,     // 45 seconds
     });
 };
 
