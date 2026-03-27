@@ -28,7 +28,10 @@ api.interceptors.response.use(
     return response;
   },
   async (error) => {
-    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+    // If it's a 401 or 403, and NOT the login request itself, redirect to login
+    const isLoginRequest = error.config?.url?.includes('/auth/login');
+    
+    if (error.response && (error.response.status === 401 || error.response.status === 403) && !isLoginRequest) {
       // kill user session and storage
       if (typeof window !== 'undefined') {
         localStorage.clear();
